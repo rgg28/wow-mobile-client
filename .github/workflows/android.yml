@@ -16,19 +16,36 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Configurar e Instalar Android SDK Oficial en el Servidor
-        uses: android-actions/setup-android@v3
+      - name: Configurar Python 3.11 de Produccion
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-      - name: Compilar APK con Inyeccion de SDK Nativo
+      - name: Instalar Dependencias del Sistema y Android SDK Tools
         run: |
-          # Creamos la carpeta base para que Docker guarde los temporales
-          mkdir -p .buildozer
+          sudo apt-get update
+          sudo apt-get install -y git zip unzip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libbz2-dev libffi-dev libssl-dev
+          pip install --upgrade pip
+          pip install buildozer cython==0.29.37 virtualenv
           
-          # Lanzamos el contenedor compartiendo el SDK oficial que instalo GitHub arriba
-          echo "y" | docker run --rm \
-            -v "${{ github.workspace }}":/home/user/app \
-            -v "${{ github.workspace }}/.buildozer":/home/user/.buildozer \
-            -v "/usr/local/lib/android/sdk":/home/user/.buildozer/android/platform/android-sdk \
-            -w /home/user/app \
-            -i \
-            kivy/buildozer:latest android debug
+          # Pre-preparamos las herramientas de linea de comandos oficiales de Android (sdkmanager)
+          mkdir -p ~/.buildozer/android/platform/android-sdk/cmdline-tools
+          wget -q https://google.com -O cmdline-tools.zip
+          unzip -q cmdline-tools.zip -d ~/.buildozer/android/platform/android-sdk/cmdline-tools
+          mv ~/.buildozer/android/platform/android-sdk/cmdline-tools/cmdline-tools ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest
+          
+          # Auto-aceptamos todas las licencias oficiales de Google
+          mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
+          echo -e "\n893547d6f52ca6474d9233ddf1a141d81e5334eb\n24333f1a63b68b449d3137a3554900db4d2e6102\n84831b9409646a547e30e308b27748e36444c890\nf991504443f313315fa667d5e434c3140db9f1d9\ne6b7c2de7d564f174c234b4502faeff3014c5577\n94f9f159efe1d9701a99de61f8bba1e32e85a059\nb41244e9ecef2346515f5e4d1544330fda02650a" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+
+      - name: Compilar APK con Buildozer Nativo
+        run: |
+          # Agregamos la bandera para corregir el comportamiento de las rutas modernas en Buildozer
+          export PATH=$PATH:~/.local/bin
+          buildozer android debug
+
+      - name: Subir APK terminada para Descargar
+        uses: actions/upload-artifact@v4
+        with:
+          name: WoW-Client-Pro-APK
+          path: bin/*.apk
