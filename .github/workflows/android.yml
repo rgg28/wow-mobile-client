@@ -10,39 +10,7 @@ jobs:
       - name: Descargar codigo fuente
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17 Estable
-        uses: actions/setup-java@v4
+      - name: Compilar APK usando el contenedor oficial de Kivy
+        uses: docker://kivy/buildozer:latest
         with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Configurar e Instalar Android SDK Oficial
-        uses: android-actions/setup-android@v3
-
-      - name: Configurar Python 3.11 de Produccion
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Instalar Dependencias de Android y Compilador
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y git zip unzip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libbz2-dev libffi-dev libssl-dev
-          pip install --upgrade pip
-          pip install buildozer cython==0.29.37 virtualenv
-
-      - name: Forzar Enlace del SDK para Buildozer
-        run: |
-          mkdir -p ~/.buildozer/android/platform/
-          ln -s /usr/local/lib/android/sdk ~/.buildozer/android/platform/android-sdk
-
-      - name: Compilar APK con Buildozer
-        run: |
-          export PATH=$PATH:~/.local/bin
-          buildozer android debug
-
-      - name: Subir APK terminada para Descargar
-        uses: actions/upload-artifact@v4
-        with:
-          name: WoW-Client-Pro-APK
-          path: bin/*.apk
+          args: android debug
