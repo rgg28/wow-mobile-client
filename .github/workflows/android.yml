@@ -41,7 +41,7 @@ jobs:
           
           # Le indicamos a Buildozer la ruta exacta del gestor de paquetes moderno
           mkdir -p ~/.buildozer/android/platform/android-sdk/tools/bin
-          ln -s $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager ~/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
+          ln -sf $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager ~/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
           
           # Lanzamos la compilacion nativa limpia
           export PATH=$PATH:~/.local/bin
