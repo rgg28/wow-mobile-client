@@ -1,0 +1,22 @@
+name: Compilar APK WoW Movil
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Descargar codigo fuente
+        uses: actions/checkout@v4
+
+      - name: Configurar Java 17 Estable
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Compilar APK de forma automatica con Buildozer
+        uses: ArtemGovorov/action-buildozer@v0
+        with:
+          command: android debug
