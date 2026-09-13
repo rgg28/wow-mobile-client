@@ -13,4 +13,4 @@ jobs:
       - name: Compilar APK usando el contenedor oficial de Kivy
         uses: docker://kivy/buildozer:latest
         with:
-          args: android debug
+          args: android debug --bdo-accept-root
