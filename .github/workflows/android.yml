@@ -16,7 +16,39 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Compilar APK de forma automatica con Buildozer
-        uses: ArtemGovorov/action-buildozer@v0
+      - name: Configurar Python 3.11 de Produccion
+        uses: actions/setup-python@v5
         with:
-          command: android debug
+          python-version: '3.11'
+
+      - name: Configurar e Instalar Android SDK Oficial de Google
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar Herramientas de Compilacion del Sistema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git zip unzip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libbz2-dev libffi-dev libssl-dev
+          pip install --upgrade pip
+          pip install buildozer cython==0.29.37 virtualenv
+
+      - name: Forzar Rutas del SDK y Compilar APK
+        run: |
+          # Creamos la carpeta interna que busca Buildozer
+          mkdir -p ~/.buildozer/android/platform
+          
+          # Vinculamos mediante un espejo el SDK oficial e infalible que nos instalo GitHub en el paso de arriba
+          ln -s $ANDROID_HOME ~/.buildozer/android/platform/android-sdk
+          
+          # Le indicamos a Buildozer la ruta exacta del gestor de paquetes moderno
+          mkdir -p ~/.buildozer/android/platform/android-sdk/tools/bin
+          ln -s $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager ~/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
+          
+          # Lanzamos la compilacion nativa limpia
+          export PATH=$PATH:~/.local/bin
+          buildozer android debug
+
+      - name: Subir APK terminada para Descargar
+        uses: actions/upload-artifact@v4
+        with:
+          name: WoW-Client-Pro-APK
+          path: bin/*.apk
