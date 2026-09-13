@@ -10,7 +10,15 @@ jobs:
       - name: Descargar codigo fuente
         uses: actions/checkout@v4
 
-      - name: Compilar APK usando el contenedor oficial de Kivy
-        uses: docker://kivy/buildozer:latest
-        with:
-          args: android debug --bdo-accept-root
+      - name: Compilar APK con Inyeccion Automatizada de Root
+        run: |
+          # Creamos la carpeta local para que Docker no tenga problemas de permisos
+          mkdir -p .buildozer
+          
+          # Ejecutamos el contenedor inyectando la respuesta 'y' de forma nativa
+          echo "y" | docker run --rm \
+            -v "${{ github.workspace }}":/home/user/app \
+            -v "${{ github.workspace }}/.buildozer":/home/user/.buildozer \
+            -w /home/user/app \
+            -i \
+            kivy/buildozer:latest android debug
