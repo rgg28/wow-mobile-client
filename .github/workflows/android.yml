@@ -28,23 +28,21 @@ jobs:
           pip install --upgrade pip
           pip install buildozer cython==0.29.37 virtualenv
 
-      - name: Compilar APK Vinculando el SDK del Servidor
+      - name: Compilar APK Inyectando Herramientas SDK
         run: |
-          # Creamos la estructura oculta inicial que busca Buildozer
-          mkdir -p ~/.buildozer/android/platform
+          # 1. Forzamos la creacion de la ruta exacta de carpetas de Buildozer
+          mkdir -p ~/.buildozer/android/platform/android-sdk/tools/bin
           
-          # Vinculamos mediante un enlace espejo el SDK oficial preinstalado de GitHub
-          ln -s $ANDROID_HOME ~/.buildozer/android/platform/android-sdk
+          # 2. Descargamos y colocamos el "sdkmanager" compatible dentro de esa ruta exacta
+          wget -q https://google.com -O cmdline.zip
+          unzip -q cmdline.zip
+          mv cmdline-tools/bin/* ~/.buildozer/android/platform/android-sdk/tools/bin/
+          mkdir -p ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest
+          mv cmdline-tools/* ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/ 2>/dev/null || true
           
-          # Lanzamos la compilación nativa directa
+          # 3. Auto-aceptamos las licencias oficiales de Google
+          mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
+          echo -e "\n893547d6f52ca6474d9233ddf1a141d81e5334eb\n24333f1a63b68b449d3137a3554900db4d2e6102\n84831b9409646a547e30e308b27748e36444c890\nf991504443f313315fa667d5e434c3140db9f1d9\ne6b7c2de7d564f174c234b4502faeff3014c5577\n94f9f159efe1d9701a99de61f8bba1e32e85a059\nb41244e9ecef2346515f5e4d1544330fda02650a" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          
+          # 4. Lanzamos la compilacion nativa limpia
           buildozer android debug
-        env:
-          # Forzamos las variables globales para que reconozca los binarios del servidor
-          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-          ANDROID_HOME: /usr/local/lib/android/sdk
-
-      - name: Subir APK terminada para Descargar
-        uses: actions/upload-artifact@v4
-        with:
-          name: WoW-Client-Pro-APK
-          path: bin/*.apk
