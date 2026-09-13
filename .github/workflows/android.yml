@@ -10,15 +10,22 @@ jobs:
       - name: Descargar codigo fuente
         uses: actions/checkout@v4
 
-      - name: Compilar APK con Inyeccion Automatizada de Root y Licencias
+      - name: Compilar APK con Parche de Compatibilidad SDK
         run: |
-          # Creamos la estructura oculta de carpetas en Windows/Linux para el SDK de Android
+          # 1. Creamos la estructura inicial de carpetas limpia
           mkdir -p .buildozer/android/platform/android-sdk/licenses
           
-          # Inyectamos de forma masiva los hashes de aprobacion oficiales de Google
+          # 2. Inyectamos las licencias oficiales de Google
           echo -e "\n893547d6f52ca6474d9233ddf1a141d81e5334eb\n24333f1a63b68b449d3137a3554900db4d2e6102\n84831b9409646a547e30e308b27748e36444c890\nf991504443f313315fa667d5e434c3140db9f1d9\ne6b7c2de7d564f174c234b4502faeff3014c5577\n94f9f159efe1d9701a99de61f8bba1e32e85a059\nb41244e9ecef2346515f5e4d1544330fda02650a" > .buildozer/android/platform/android-sdk/licenses/android-sdk-license
           
-          # Ejecutamos el contenedor con la respuesta 'y' interactiva forzada
+          # 3. Forzamos la descarga del "sdkmanager" moderno en la ruta exacta que Buildozer necesita
+          mkdir -p .buildozer/android/packages
+          wget -q https://google.com -O .buildozer/android/packages/commandlinetools.zip
+          mkdir -p .buildozer/android/platform/android-sdk/tools
+          unzip -q .buildozer/android/packages/commandlinetools.zip -d .buildozer/android/platform/android-sdk/tools/
+          mv .buildozer/android/platform/android-sdk/tools/cmdline-tools/* .buildozer/android/platform/android-sdk/tools/ 2>/dev/null || true
+          
+          # 4. Lanzamos la ejecucion limpia con respuesta automatica interactiva
           echo "y" | docker run --rm \
             -v "${{ github.workspace }}":/home/user/app \
             -v "${{ github.workspace }}/.buildozer":/home/user/.buildozer \
