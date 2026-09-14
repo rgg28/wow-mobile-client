@@ -19,11 +19,10 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Reparar y descargar ejecutable del Wrapper faltante
-      # Forzamos la descarga del .jar directo dentro de la subcarpeta mi-proyecto
-      run: |
-        mkdir -p mi-proyecto/gradle/wrapper
-        wget -q https://githubusercontent.com -O mi-proyecto/gradle/wrapper/gradle-wrapper.jar
+    - name: Autogenerar archivos del Gradle Wrapper de forma Nativa
+      # Reemplazamos wget por un comando que fabrica el .jar localmente en el servidor
+      run: gradle wrapper --gradle-version 8.2
+      working-directory: ./mi-proyecto
 
     - name: Otorgar permisos de ejecucion al script gradlew
       run: chmod +x ./gradlew
