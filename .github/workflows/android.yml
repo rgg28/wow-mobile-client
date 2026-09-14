@@ -8,18 +8,21 @@ jobs:
       - name: Descargar codigo fuente del cliente WoW
         uses: actions/checkout@v4
 
+      - name: Descargar Estructura Oficial de Android SDL2
+        uses: actions/checkout@v4
+        with:
+          repository: libsdl-org/SDL-toolchain-android
+          path: build_android
+
       - name: Configurar Java 17 Estable
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Descargar Plantilla y Motor SDL2 Oficial para Android
+      - name: Mover Archivo de Codigo C al Proyecto Nativo
         run: |
-          # Descargamos una estructura de compilacion nativa de Android que ya incluye SDL2 configurado de fabrica
-          git clone https://github.com build_android
-          
-          # Movemos tu archivo main.c dentro del corazon del proyecto de Android nativo
+          # Inyectamos tu main.c en el corazon del motor grafico de Android
           mkdir -p build_android/app/src/main/jni/src
           cp main.c build_android/app/src/main/jni/src/main.c
 
@@ -29,10 +32,8 @@ jobs:
       - name: Ejecutar Compilador y Generar APK Nativa
         run: |
           cd build_android
-          # Le otorgamos permisos al empaquetador de Google (Gradle)
           chmod +x gradlew
-          
-          # Compilamos la APK para celulares modernos (arm64-v8a) saltandonos los errores de Linker
+          # Compilamos la APK para celulares modernos (arm64-v8a) con el motor Gradle
           ./gradlew assembleDebug -Pandroid.injected.build.abi=arm64-v8a
 
       - name: Subir APK de C puro para Descargar
