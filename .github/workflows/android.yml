@@ -23,49 +23,11 @@ jobs:
       run: gradle wrapper --gradle-version 8.2
       working-directory: ./mi-proyecto
 
-    - name: Forzar Creacion de AndroidManifest Inyectando Caracteres Puros
-      # Escribimos el manifiesto con marcadores temporales (X) y luego forzamos los dos puntos reales mediante Linux
-      run: |
-        mkdir -p app/src/main
-        cat << 'EOF' > app/src/main/AndroidManifest.xml
-        <?xml version="1.0" encoding="utf-8"?>
-        <manifest xmlnsXandroid="http://android.com">
-            <uses-permission androidXname="android.permission.READ_EXTERNAL_STORAGE" />
-            <uses-permission androidXname="android.permission.WRITE_EXTERNAL_STORAGE" />
-            <uses-permission androidXname="android.permission.MANAGE_EXTERNAL_STORAGE" />
-            <application
-                androidXallowBackup="true"
-                androidXlabel="WoW Mobile C"
-                androidXtheme="@style/Theme.AppCompat.NoActionBar">
-                <activity
-                    androidXname="org.libsdl.app.SDLActivity"
-                    androidXexported="true"
-                    androidXconfigChanges="orientation|keyboardHidden|screenSize"
-                    androidXscreenOrientation="landscape">
-                    <intent-filter>
-                        <action androidXname="android.intent.action.MAIN" />
-                        <category androidXname="android.intent.category.LAUNCHER" />
-                    </intent-filter>
-                </activity>
-            </application>
-        </manifest>
-        EOF
-        
-        # El comando sed reemplaza físicamente la 'X' por los dos puntos (:) originales de Android en el disco duro
-        sed -i 's/androidX/android:/g' app/src/main/AndroidManifest.xml
-        sed -i 's/xmlnsX/xmlns:/g' app/src/main/AndroidManifest.xml
-        sed -i 's/actionX/action:/g' app/src/main/AndroidManifest.xml
-        sed -i 's/categoryX/category:/g' app/src/main/AndroidManifest.xml
-        
-        # Imprimimos el archivo en la consola para auditar que los dos puntos estén perfectamente estampados
-        cat app/src/main/AndroidManifest.xml
-      working-directory: ./mi-proyecto
-
     - name: Otorgar permisos de ejecucion al script gradlew
       run: chmod +x ./gradlew
       working-directory: ./mi-proyecto
 
-    - name: Compilar APK Final Destrabada
+    - name: Compilar APK Final
       run: ./gradlew assembleDebug --no-build-cache
       working-directory: ./mi-proyecto
 
