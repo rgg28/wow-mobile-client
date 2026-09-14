@@ -1,19 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://android.com"
-    package="com.ejemplo.misdl3">
+<manifest xmlns:android="http://android.com">
 
-    <!-- Permisos para leer la carpeta Data del WoW de Pandaria -->
+    <!-- Permisos corregidos con la clave estricta de nombres -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
     <application
         android:allowBackup="true"
-        android:icon="@mipmap/ic_launcher"
         android:label="WoW Mobile C"
         android:theme="@style/Theme.AppCompat.NoActionBar">
         
-        <!-- Actividad principal que enciende tu main.c nativo -->
+        <!-- Actividad principal que enlaza directamente tu main.c de SDL3 -->
         <activity
             android:name="org.libsdl.app.SDLActivity"
             android:exported="true"
