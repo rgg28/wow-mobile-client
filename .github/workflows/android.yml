@@ -23,40 +23,41 @@ jobs:
       run: gradle wrapper --gradle-version 8.2
       working-directory: ./mi-proyecto
 
-    - name: Forzar Creacion de AndroidManifest con Escape de Caracteres
-      # Usamos la barra invertida (\) para obligar a Linux a estampar los dos puntos (:) reales sin comerse las propiedades
+    - name: Forzar Creacion de AndroidManifest Inyectando Caracteres Puros
+      # Escribimos el manifiesto con marcadores temporales (X) y luego forzamos los dos puntos reales mediante Linux
       run: |
         mkdir -p app/src/main
         cat << 'EOF' > app/src/main/AndroidManifest.xml
         <?xml version="1.0" encoding="utf-8"?>
-        <manifest xmlns:android="http://android.com">
-            <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-            <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-            <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+        <manifest xmlnsXandroid="http://android.com">
+            <uses-permission androidXname="android.permission.READ_EXTERNAL_STORAGE" />
+            <uses-permission androidXname="android.permission.WRITE_EXTERNAL_STORAGE" />
+            <uses-permission androidXname="android.permission.MANAGE_EXTERNAL_STORAGE" />
             <application
-                android:allowBackup="true"
-                android:label="WoW Mobile C"
-                android:theme="@style/Theme.AppCompat.NoActionBar">
+                androidXallowBackup="true"
+                androidXlabel="WoW Mobile C"
+                androidXtheme="@style/Theme.AppCompat.NoActionBar">
                 <activity
-                    android:name="org.libsdl.app.SDLActivity"
-                    android:exported="true"
-                    android:configChanges="orientation|keyboardHidden|screenSize"
-                    android:screenOrientation="landscape">
+                    androidXname="org.libsdl.app.SDLActivity"
+                    androidXexported="true"
+                    androidXconfigChanges="orientation|keyboardHidden|screenSize"
+                    androidXscreenOrientation="landscape">
                     <intent-filter>
-                        <action android:name="android.intent.action.MAIN" />
-                        <category android:name="android.intent.category.LAUNCHER" />
+                        <action androidXname="android.intent.action.MAIN" />
+                        <category androidXname="android.intent.category.LAUNCHER" />
                     </intent-filter>
                 </activity>
             </application>
         </manifest>
         EOF
         
-        # Corrección de fuerza en vivo: Reemplazamos cualquier espacio roto por los dos puntos reales de Android
-        sed -i 's/android name=/android:name=/g' app/src/main/AndroidManifest.xml
-        sed -i 's/action name=/action:name=/g' app/src/main/AndroidManifest.xml
-        sed -i 's/category name=/category:name=/g' app/src/main/AndroidManifest.xml
+        # El comando sed reemplaza físicamente la 'X' por los dos puntos (:) originales de Android en el disco duro
+        sed -i 's/androidX/android:/g' app/src/main/AndroidManifest.xml
+        sed -i 's/xmlnsX/xmlns:/g' app/src/main/AndroidManifest.xml
+        sed -i 's/actionX/action:/g' app/src/main/AndroidManifest.xml
+        sed -i 's/categoryX/category:/g' app/src/main/AndroidManifest.xml
         
-        # Imprimimos el resultado final en la consola para auditar los dos puntos
+        # Imprimimos el archivo en la consola para auditar que los dos puntos estén perfectamente estampados
         cat app/src/main/AndroidManifest.xml
       working-directory: ./mi-proyecto
 
