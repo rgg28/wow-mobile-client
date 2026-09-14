@@ -13,14 +13,29 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y git zip unzip ninja-build cmake
 
+      - name: Descargar y Preparar Motor SDL2 para Android
+        run: |
+          # Descargamos las fuentes de desarrollo oficiales de SDL2
+          git clone https://github.com -b SDL2 --depth 1
+          
+          # Generamos los archivos de configuracion para compilacion cruzada movil
+          mkdir -p SDL/build_android
+          cd SDL/build_android
+          cmake .. -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DSDL_STATIC=ON \
+            -DSDL_SHARED=OFF
+
       - name: Compilar Codigo C Nativo para Celulares (arm64-v8a)
         run: |
-          # Compilamos usando la variable global ANDROID_NDK_HOME para saltar rutas viejas
+          # Compilamos vinculando de forma directa la carpeta de Includes de SDL2 que descargamos arriba
           $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang \
             main.c -o wow_mobile_client \
             -I$ANDROID_NDK_HOME/sysroot/usr/include \
+            -I./SDL/include \
             -L$ANDROID_NDK_HOME/sysroot/usr/lib/aarch64-linux-android/24 \
-            -lSDL2 -llog -landroid -O3
+            -llog -landroid -O3
 
       - name: Empaquetar en archivo APK Instalable
         run: |
