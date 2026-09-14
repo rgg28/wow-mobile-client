@@ -30,7 +30,7 @@ jobs:
         # 2. Desempaquetamos el archivo AAR oficial para extraer la plantilla nativa de Google sin errores humanos
         unzip -q SDL3-3.4.16.aar -d sdl_package
         
-        # 3. Copiamos tu archivo main.c al compilador nativo del NDK
+        # 3. CORREGIDO: Copiamos tu archivo main.c usando la ruta exacta de tu subcarpeta mi-proyecto
         mkdir -p sdl_package/jni/src
         cp ../../src/main/cpp/main.c sdl_package/jni/src/main.c
         
