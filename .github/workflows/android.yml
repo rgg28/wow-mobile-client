@@ -27,7 +27,7 @@ jobs:
       working-directory: ./mi-proyecto
 
     - name: Generar AndroidManifest Limpio de forma Binaria
-      # Aquí creamos la carpeta y rellenamos el archivo completo con código Linux nativo puro
+      # Este bloque crea la carpeta y escribe todo el contenido en formato puro de Linux al mismo tiempo
       run: |
         mkdir -p app/src/main
         cat << 'EOF' > app/src/main/AndroidManifest.xml
