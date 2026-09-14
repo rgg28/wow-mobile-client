@@ -26,33 +26,15 @@ jobs:
       run: gradle wrapper --gradle-version 8.2
       working-directory: ./mi-proyecto
 
-    - name: Fabricar AndroidManifest Binario Perfecto sin Errores
-      # Este comando escribe el archivo directamente en el disco duro del servidor con formato LF puro de Linux
+    - name: Reparar Sintaxis del Manifiesto de Fuerza en Linux
+      # Este paso corrige cualquier comilla rota, espacios de nombres o falta de dos puntos introducidos por editores externos
       run: |
-        mkdir -p app/src/main
-        cat << 'EOF' > app/src/main/AndroidManifest.xml
-        <?xml version="1.0" encoding="utf-8"?>
-        <manifest xmlns:android="http://android.com">
-            <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-            <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-            <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-            <application
-                android:allowBackup="true"
-                android:label="WoW Mobile C"
-                android:theme="@style/Theme.AppCompat.NoActionBar">
-                <activity
-                    android:name="org.libsdl.app.SDLActivity"
-                    android:exported="true"
-                    android:configChanges="orientation|keyboardHidden|screenSize"
-                    android:screenOrientation="landscape">
-                    <intent-filter>
-                        <action android:name="android.intent.action.MAIN" />
-                        <category android:name="android.intent.category.LAUNCHER" />
-                    </intent-filter>
-                </activity>
-            </application>
-        </manifest>
-        EOF
+        sed -i 's/android name=/android:name=/g' app/src/main/AndroidManifest.xml
+        sed -i 's/action name=/action:name=/g' app/src/main/AndroidManifest.xml
+        sed -i 's/category name=/category:name=/g' app/src/main/AndroidManifest.xml
+        
+        # Verificacion visual obligatoria en la consola
+        cat app/src/main/AndroidManifest.xml
       working-directory: ./mi-proyecto
 
     - name: Otorgar permisos de ejecucion al script gradlew
