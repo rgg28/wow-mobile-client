@@ -20,8 +20,37 @@ jobs:
         distribution: 'temurin'
 
     - name: Autogenerar archivos del Gradle Wrapper de forma Nativa
-      # Reemplazamos wget por un comando que fabrica el .jar localmente en el servidor
       run: gradle wrapper --gradle-version 8.2
+      working-directory: ./mi-proyecto
+
+    - name: Forzar Creacion de AndroidManifest sin Errores de Formato
+      # Este comando destruye el archivo con espacios rotos y crea uno UTF-8 puro en Linux
+      run: |
+        rm -f app/src/main/AndroidManifest.xml
+        mkdir -p app/src/main
+        cat << 'EOF' > app/src/main/AndroidManifest.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <manifest xmlns:android="http://android.com">
+            <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+            <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+            <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+            <application
+                android:allowBackup="true"
+                android:label="WoW Mobile C"
+                android:theme="@style/Theme.AppCompat.NoActionBar">
+                <activity
+                    android:name="org.libsdl.app.SDLActivity"
+                    android:exported="true"
+                    android:configChanges="orientation|keyboardHidden|screenSize"
+                    android:screenOrientation="landscape">
+                    <intent-filter>
+                        <action android:name="android.intent.action.MAIN" />
+                        <category android:name="android.intent.category.LAUNCHER" />
+                    </intent-filter>
+                </activity>
+            </application>
+        </manifest>
+        EOF
       working-directory: ./mi-proyecto
 
     - name: Otorgar permisos de ejecucion al script gradlew
