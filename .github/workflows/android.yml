@@ -1,44 +1,40 @@
-name: Compilar APK WoW Nativo C
-on: [push, workflow_dispatch]
+name: Build Android App with SDL3
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ubuntu-22.04
+  build-android:
+    runs-on: ubuntu-latest
+
     steps:
-      - name: Descargar codigo fuente del cliente WoW
-        uses: actions/checkout@v4
+    - name: Descargar codigo fuente del repositorio
+      uses: actions/checkout@v4
 
-      - name: Descargar Plantilla Oficial de Android SDL2
-        run: |
-          # Descargamos la estructura móvil oficial en un archivo ZIP limpio
-          wget -q https://github.com -O plantilla.zip
-          unzip -q plantilla.zip
-          mv SDL-toolchain-android-main build_android
+    - name: Configurar Java 17 Estable
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
 
-      - name: Configurar Java 17 Estable
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
+    - name: Reparar y descargar ejecutable del Wrapper faltante
+      # Forzamos la descarga del .jar directo dentro de la subcarpeta mi-proyecto
+      run: |
+        mkdir -p mi-proyecto/gradle/wrapper
+        wget -q https://githubusercontent.com -O mi-proyecto/gradle/wrapper/gradle-wrapper.jar
 
-      - name: Mover Archivo de Codigo C al Proyecto Nativo
-        run: |
-          # Inyectamos tu main.c en el corazon del motor grafico de Android
-          mkdir -p build_android/app/src/main/jni/src
-          cp main.c build_android/app/src/main/jni/src/main.c
+    - name: Otorgar permisos de ejecucion al script gradlew
+      run: chmod +x ./gradlew
+      working-directory: ./mi-proyecto
 
-      - name: Configurar e Instalar Android SDK Oficial de Google
-        uses: android-actions/setup-android@v3
+    - name: Compilar APK Nativa con Gradle
+      run: ./gradlew assembleDebug
+      working-directory: ./mi-proyecto
 
-      - name: Ejecutar Compilador y Generar APK Nativa
-        run: |
-          cd build_android
-          chmod +x gradlew
-          # Compilamos la APK para celulares modernos (arm64-v8a) con el motor Gradle
-          ./gradlew assembleDebug -Pandroid.injected.build.abi=arm64-v8a
-
-      - name: Subir APK de C puro para Descargar
-        uses: actions/upload-artifact@v4
-        with:
-          name: WoW-Nativo-C-APK
-          path: build_android/app/build/outputs/apk/debug/*.apk
+    - name: Subir APK de SDL3 para Descargar
+      uses: actions/upload-artifact@v4
+      with:
+        name: WoW-SDL3-Mobile-APK
+        path: mi-proyecto/app/build/outputs/apk/debug/*.apk
