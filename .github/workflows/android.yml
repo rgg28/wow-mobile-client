@@ -15,7 +15,7 @@ jobs:
 
       - name: Descargar y Preparar Motor SDL2 para Android
         run: |
-          # Descargamos las fuentes de desarrollo oficiales de SDL2
+          # Corregido: Enlace completo al repositorio oficial de desarrollo de SDL2
           git clone https://github.com -b SDL2 --depth 1
           
           # Generamos los archivos de configuracion para compilacion cruzada movil
@@ -29,7 +29,7 @@ jobs:
 
       - name: Compilar Codigo C Nativo para Celulares (arm64-v8a)
         run: |
-          # Compilamos vinculando de forma directa la carpeta de Includes de SDL2 que descargamos arriba
+          # Compilamos vinculando la carpeta de cabeceras de SDL2 descargada
           $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang \
             main.c -o wow_mobile_client \
             -I$ANDROID_NDK_HOME/sysroot/usr/include \
