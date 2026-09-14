@@ -8,37 +8,35 @@ jobs:
       - name: Descargar codigo fuente del cliente WoW
         uses: actions/checkout@v4
 
-      - name: Descargar Motor SDL2 de forma Oficial
-        uses: actions/checkout@v4
+      - name: Configurar Java 17 Estable
+        uses: actions/setup-java@v4
         with:
-          repository: libsdl-org/SDL
-          ref: SDL2
-          path: SDL
-          sparse-checkout: include
+          distribution: 'temurin'
+          java-version: '17'
 
-      - name: Instalar Herramientas del Sistema
+      - name: Descargar Plantilla y Motor SDL2 Oficial para Android
         run: |
-          sudo apt-get update
-          sudo apt-get install -y zip unzip ninja-build cmake
+          # Descargamos una estructura de compilacion nativa de Android que ya incluye SDL2 configurado de fabrica
+          git clone https://github.com build_android
+          
+          # Movemos tu archivo main.c dentro del corazon del proyecto de Android nativo
+          mkdir -p build_android/app/src/main/jni/src
+          cp main.c build_android/app/src/main/jni/src/main.c
 
-      - name: Compilar Codigo C Nativo para Celulares (arm64-v8a)
-        run: |
-          # Sincronizamos las carpetas de inclusion agregando la ruta directa a los archivos de cabecera
-          $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang \
-            main.c -o wow_mobile_client \
-            -I$ANDROID_NDK_HOME/sysroot/usr/include \
-            -I./SDL/include \
-            -L$ANDROID_NDK_HOME/sysroot/usr/lib/aarch64-linux-android/24 \
-            -llog -landroid -O3
+      - name: Configurar e Instalar Android SDK Oficial de Google
+        uses: android-actions/setup-android@v3
 
-      - name: Empaquetar en archivo APK Instalable
+      - name: Ejecutar Compilador y Generar APK Nativa
         run: |
-          mkdir -p bin
-          # Empaquetamos el archivo binario nativo en la estructura estandar movil
-          zip -r bin/WoW_Client_Nativo.apk wow_mobile_client
+          cd build_android
+          # Le otorgamos permisos al empaquetador de Google (Gradle)
+          chmod +x gradlew
+          
+          # Compilamos la APK para celulares modernos (arm64-v8a) saltandonos los errores de Linker
+          ./gradlew assembleDebug -Pandroid.injected.build.abi=arm64-v8a
 
       - name: Subir APK de C puro para Descargar
         uses: actions/upload-artifact@v4
         with:
           name: WoW-Nativo-C-APK
-          path: bin/*.apk
+          path: build_android/app/build/outputs/apk/debug/*.apk
