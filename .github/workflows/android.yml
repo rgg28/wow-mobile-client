@@ -10,7 +10,25 @@ jobs:
       - name: Descargar codigo fuente
         uses: actions/checkout@v4
 
-      - name: Compilar APK con el Motor Automatizado Oficial
-        uses: ArtemGovorov/action-buildozer@v1.3.0
+      - name: Compilar APK con Docker Estable
+        run: |
+          # 1. Preparamos las carpetas locales en el servidor
+          mkdir -p .buildozer
+          
+          # 2. Inyectamos las licencias oficiales de Google de antemano
+          mkdir -p .buildozer/android/platform/android-sdk/licenses
+          echo -e "\n893547d6f52ca6474d9233ddf1a141d81e5334eb\n24333f1a63b68b449d3137a3554900db4d2e6102\n84831b9409646a547e30e308b27748e36444c890\nf991504443f313315fa667d5e434c3140db9f1d9\ne6b7c2de7d564f174c234b4502faeff3014c5577\n94f9f159efe1d9701a99de61f8bba1e32e85a059\nb41244e9ecef2346515f5e4d1544330fda02650a" > .buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          
+          # 3. Lanzamos el contenedor interactivo inyectando el "y" automatico para root
+          echo "y" | docker run \
+            -v "${{ github.workspace }}":/home/user/app \
+            -v "${{ github.workspace }}/.buildozer":/home/user/.buildozer \
+            -w /home/user/app \
+            -i \
+            kivy/buildozer:latest android debug
+
+      - name: Subir APK terminada para Descargar
+        uses: actions/upload-artifact@v4
         with:
-          command: android debug
+          name: WoW-Client-Pro-APK
+          path: bin/*.apk
