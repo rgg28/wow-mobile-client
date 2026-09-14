@@ -22,32 +22,24 @@ jobs:
     - name: Configurar e Instalar Android SDK Oficial de Google
       uses: android-actions/setup-android@v3
 
-    - name: Compilar APK usando el Sistema Oficial de SDL
-      run: |
-        # 1. Buscamos de forma inteligente la ruta real del archivo main.c en el servidor
-        RUTA_MAIN=$(find . -name "main.c" | head -n 1)
-        echo "Archivo main.c encontrado con exito en la ruta: $RUTA_MAIN"
-        
-        # 2. Nos movemos a la carpeta de las librerías donde está el SDL3
-        cd mi-proyecto/app/libs
-        
-        # 3. Desempaquetamos el archivo AAR oficial para extraer la plantilla nativa
-        unzip -q SDL3-3.4.16.aar -d sdl_package
-        
-        # 4. Inyectamos el archivo main.c dentro del compilador nativo del NDK
-        mkdir -p sdl_package/jni/src
-        cp "../../../$RUTA_MAIN" sdl_package/jni/src/main.c
-        
-        # 5. CORREGIDO: Eliminamos el archivo settings secundario para romper el bloqueo de Gradle
-        rm -f sdl_package/settings.gradle
-        
-        # 6. Lanzamos la compilacion nativa limpia de tu joystick y botonera táctil
-        cd sdl_package
-        chmod +x gradlew 2>/dev/null || true
-        gradle assembleDebug -Pandroid.injected.build.abi=arm64-v8a --no-build-cache
+    - name: Autogenerar archivos del Gradle Wrapper de forma Nativa
+      run: gradle wrapper --gradle-version 8.2
+      working-directory: ./mi-proyecto
 
-    - name: Subir APK de SDL3 Terminada
+    - name: Extraer librerias nativas de SDL3
+      run: |
+        cd mi-proyecto/app/libs
+        # Desempaquetamos el archivo AAR solo para extraer los archivos binarios .so y las cabeceras (.h)
+        unzip -q SDL3-3.4.16.aar -d jni_libs
+      working-directory: .
+
+    - name: Compilar APK Nativa con Gradle
+      # Ejecutamos la compilación desde tu proyecto raíz real, respetando tu settings.gradle original
+      run: ./gradlew assembleDebug -Pandroid.injected.build.abi=arm64-v8a --no-build-cache
+      working-directory: ./mi-proyecto
+
+    - name: Subir APK de SDL3 para Descargar
       uses: actions/upload-artifact@v4
       with:
         name: WoW-SDL3-Mobile-APK
-        path: mi-proyecto/app/libs/sdl_package/build/outputs/apk/debug/*.apk
+        path: mi-proyecto/app/build/outputs/apk/debug/*.apk
