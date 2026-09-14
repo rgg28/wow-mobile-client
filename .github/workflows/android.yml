@@ -8,11 +8,12 @@ jobs:
       - name: Descargar codigo fuente del cliente WoW
         uses: actions/checkout@v4
 
-      - name: Descargar Estructura Oficial de Android SDL2
-        uses: actions/checkout@v4
-        with:
-          repository: libsdl-org/SDL-toolchain-android
-          path: build_android
+      - name: Descargar Plantilla Oficial de Android SDL2
+        run: |
+          # Descargamos la estructura móvil oficial en un archivo ZIP limpio
+          wget -q https://github.com -O plantilla.zip
+          unzip -q plantilla.zip
+          mv SDL-toolchain-android-main build_android
 
       - name: Configurar Java 17 Estable
         uses: actions/setup-java@v4
