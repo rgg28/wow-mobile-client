@@ -23,41 +23,41 @@ jobs:
       run: gradle wrapper --gradle-version 8.2
       working-directory: ./mi-proyecto
 
-    - name: Forzar Creacion de AndroidManifest sin Errores de Formato
-      # El comando 'printf' estampa el codigo de forma binaria pura saltandose cualquier sangria invisible de la web
+    - name: Crear AndroidManifest Perfecto desde Cero
+      # Como ya borraste el viejo, este comando creara el archivo original en formato UTF-8 limpio
       run: |
         mkdir -p app/src/main
-        printf '%s\n' \
-          '<?xml version="1.0" encoding="utf-8"?>' \
-          '<manifest xmlns:android="http://android.com">' \
-          '    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />' \
-          '    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />' \
-          '    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />' \
-          '    <application' \
-          '        android:allowBackup="true"' \
-          '        android:label="WoW Mobile C"' \
-          '        android:theme="@style/Theme.AppCompat.NoActionBar">' \
-          '        <activity' \
-          '            android:name="org.libsdl.app.SDLActivity"' \
-          '            android:exported="true"' \
-          '            android:configChanges="orientation|keyboardHidden|screenSize"' \
-          '            android:screenOrientation="landscape">' \
-          '            <intent-filter>' \
-          '                <action android:name="android.intent.action.MAIN" />' \
-          '                <category android:name="android.intent.category.LAUNCHER" />' \
-          '            </intent-filter>' \
-          '        </activity>' \
-          '    </application>' \
-          '</manifest>' > app/src/main/AndroidManifest.xml
+        cat << 'EOF' > app/src/main/AndroidManifest.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <manifest xmlns:android="http://android.com">
+            <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+            <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+            <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+            <application
+                android:allowBackup="true"
+                android:label="WoW Mobile C"
+                android:theme="@style/Theme.AppCompat.NoActionBar">
+                <activity
+                    android:name="org.libsdl.app.SDLActivity"
+                    android:exported="true"
+                    android:configChanges="orientation|keyboardHidden|screenSize"
+                    android:screenOrientation="landscape">
+                    <intent-filter>
+                        <action android:name="android.intent.action.MAIN" />
+                        <category android:name="android.intent.category.LAUNCHER" />
+                    </intent-filter>
+                </activity>
+            </application>
+        </manifest>
+        EOF
       working-directory: ./mi-proyecto
 
     - name: Otorgar permisos de ejecucion al script gradlew
       run: chmod +x ./gradlew
       working-directory: ./mi-proyecto
 
-    - name: Limpiar Cache Corrupta y Compilar APK Final
-      # El comando 'clean' borra por completo cualquier temporal colgado de Google de los intentos anteriores
-      run: ./gradlew clean assembleDebug --no-build-cache
+    - name: Compilar APK Final
+      run: ./gradlew assembleDebug --no-build-cache
       working-directory: ./mi-proyecto
 
     - name: Subir APK de SDL3 para Descargar
