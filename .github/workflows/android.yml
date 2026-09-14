@@ -31,14 +31,17 @@ jobs:
         # 2. Nos movemos a la carpeta de las librerías donde está el SDL3
         cd mi-proyecto/app/libs
         
-        # 3. Desempaquetamos el archivo AAR oficial para extraer la plantilla nativa de Google
+        # 3. Desempaquetamos el archivo AAR oficial para extraer la plantilla nativa
         unzip -q SDL3-3.4.16.aar -d sdl_package
         
-        # 4. Inyectamos el archivo main.c que encontramos en el paso 1 dentro del compilador nativo
+        # 4. Inyectamos el archivo main.c dentro del compilador nativo del NDK
         mkdir -p sdl_package/jni/src
         cp "../../../$RUTA_MAIN" sdl_package/jni/src/main.c
         
-        # 5. Forzamos la compilacion directa de tu joystick y botonera con los binarios de SDL3
+        # 5. CORREGIDO: Eliminamos el archivo settings secundario para romper el bloqueo de Gradle
+        rm -f sdl_package/settings.gradle
+        
+        # 6. Lanzamos la compilacion nativa limpia de tu joystick y botonera táctil
         cd sdl_package
         chmod +x gradlew 2>/dev/null || true
         gradle assembleDebug -Pandroid.injected.build.abi=arm64-v8a --no-build-cache
