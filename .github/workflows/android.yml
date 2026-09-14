@@ -23,11 +23,20 @@ jobs:
       run: gradle wrapper --gradle-version 8.2
       working-directory: ./mi-proyecto
 
+    - name: Reparar Formato de Texto de Windows a Linux (CRLF a LF)
+      # Este comando elimina de raíz los caracteres ocultos (\r) que inyecta el Bloc de notas de Windows
+      run: |
+        sed -i 's/\r//g' app/src/main/AndroidManifest.xml
+        
+        # Auditoría de seguridad: Imprimimos el archivo limpio en la consola
+        cat app/src/main/AndroidManifest.xml
+      working-directory: ./mi-proyecto
+
     - name: Otorgar permisos de ejecucion al script gradlew
       run: chmod +x ./gradlew
       working-directory: ./mi-proyecto
 
-    - name: Compilar APK Final
+    - name: Compilar APK Final sin Bloqueos
       run: ./gradlew assembleDebug --no-build-cache
       working-directory: ./mi-proyecto
 
