@@ -24,17 +24,21 @@ jobs:
 
     - name: Compilar APK usando el Sistema Oficial de SDL
       run: |
-        # 1. Nos movemos a la carpeta donde tienes guardado el SDL3 descomprimido
+        # 1. Buscamos de forma inteligente la ruta real del archivo main.c en el servidor
+        RUTA_MAIN=$(find . -name "main.c" | head -n 1)
+        echo "Archivo main.c encontrado con exito en la ruta: $RUTA_MAIN"
+        
+        # 2. Nos movemos a la carpeta de las librerías donde está el SDL3
         cd mi-proyecto/app/libs
         
-        # 2. Desempaquetamos el archivo AAR oficial para extraer la plantilla nativa de Google sin errores humanos
+        # 3. Desempaquetamos el archivo AAR oficial para extraer la plantilla nativa de Google
         unzip -q SDL3-3.4.16.aar -d sdl_package
         
-        # 3. CORREGIDO: Copiamos tu archivo main.c usando la ruta exacta de tu subcarpeta mi-proyecto
+        # 4. Inyectamos el archivo main.c que encontramos en el paso 1 dentro del compilador nativo
         mkdir -p sdl_package/jni/src
-        cp ../../src/main/cpp/main.c sdl_package/jni/src/main.c
+        cp "../../../$RUTA_MAIN" sdl_package/jni/src/main.c
         
-        # 4. Forzamos la compilacion directa de tu joystick y botonera con los binarios de SDL3
+        # 5. Forzamos la compilacion directa de tu joystick y botonera con los binarios de SDL3
         cd sdl_package
         chmod +x gradlew 2>/dev/null || true
         gradle assembleDebug -Pandroid.injected.build.abi=arm64-v8a --no-build-cache
