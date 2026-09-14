@@ -14,7 +14,7 @@ jobs:
           repository: libsdl-org/SDL
           ref: SDL2
           path: SDL
-          sparse-checkout: include # Descarga solo las cabeceras de texto para que sea instantáneo
+          sparse-checkout: include
 
       - name: Instalar Herramientas del Sistema
         run: |
@@ -23,7 +23,7 @@ jobs:
 
       - name: Compilar Codigo C Nativo para Celulares (arm64-v8a)
         run: |
-          # Compilamos vinculando la carpeta de cabeceras de SDL2 que GitHub nos inyectó limpiamente
+          # Sincronizamos las carpetas de inclusion agregando la ruta directa a los archivos de cabecera
           $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang \
             main.c -o wow_mobile_client \
             -I$ANDROID_NDK_HOME/sysroot/usr/include \
