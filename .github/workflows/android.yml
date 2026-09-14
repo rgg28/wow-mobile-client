@@ -26,15 +26,12 @@ jobs:
       run: gradle wrapper --gradle-version 8.2
       working-directory: ./mi-proyecto
 
-    - name: Extraer librerias nativas de SDL3
-      run: |
-        cd mi-proyecto/app/libs
-        # Desempaquetamos el archivo AAR solo para extraer los archivos binarios .so y las cabeceras (.h)
-        unzip -q SDL3-3.4.16.aar -d jni_libs
-      working-directory: .
+    - name: Otorgar permisos de ejecucion al script gradlew
+      run: chmod +x ./gradlew
+      working-directory: ./mi-proyecto
 
-    - name: Compilar APK Nativa con Gradle
-      # Ejecutamos la compilación desde tu proyecto raíz real, respetando tu settings.gradle original
+    - name: Compilar APK Final con el Manifiesto de Fabrica
+      # Compilamos usando tu build.gradle el cual tomara el manifiesto limpio integrado en el .aar de SDL3
       run: ./gradlew assembleDebug -Pandroid.injected.build.abi=arm64-v8a --no-build-cache
       working-directory: ./mi-proyecto
 
