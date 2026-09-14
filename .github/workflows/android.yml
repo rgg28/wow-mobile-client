@@ -1,7 +1,5 @@
-name: Compilar APK WoW Movil
-on:
-  push:
-  workflow_dispatch:
+name: Compilar APK WoW Nativo C
+on: [push, workflow_dispatch]
 
 jobs:
   build:
@@ -10,25 +8,33 @@ jobs:
       - name: Descargar codigo fuente
         uses: actions/checkout@v4
 
-      - name: Compilar APK con Docker Estable
+      - name: Instalar Android NDK y Herramientas del Sistema
         run: |
-          # 1. Preparamos las carpetas locales en el servidor
-          mkdir -p .buildozer
+          sudo apt-get update
+          sudo apt-get install -y git zip unzip ninja-build cmake
           
-          # 2. Inyectamos las licencias oficiales de Google de antemano
-          mkdir -p .buildozer/android/platform/android-sdk/licenses
-          echo -e "\n893547d6f52ca6474d9233ddf1a141d81e5334eb\n24333f1a63b68b449d3137a3554900db4d2e6102\n84831b9409646a547e30e308b27748e36444c890\nf991504443f313315fa667d5e434c3140db9f1d9\ne6b7c2de7d564f174c234b4502faeff3014c5577\n94f9f159efe1d9701a99de61f8bba1e32e85a059\nb41244e9ecef2346515f5e4d1544330fda02650a" > .buildozer/android/platform/android-sdk/licenses/android-sdk-license
-          
-          # 3. Lanzamos el contenedor interactivo inyectando el "y" automatico para root
-          echo "y" | docker run \
-            -v "${{ github.workspace }}":/home/user/app \
-            -v "${{ github.workspace }}/.buildozer":/home/user/.buildozer \
-            -w /home/user/app \
-            -i \
-            kivy/buildozer:latest android debug
+      - name: Configurar Kit de Compilacion Android NDK
+        uses: nndess/setup-android-ndk@v1
+        with:
+          ndk-version: r25c
 
-      - name: Subir APK terminada para Descargar
+      - name: Compilar Codigo C para Celulares (arm64-v8a)
+        run: |
+          # Compilacion cruzada directa usando Clang del NDK para Android 24 ARM64
+          $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang \
+            main.c -o wow_mobile_client \
+            -I$ANDROID_NDK_HOME/sysroot/usr/include \
+            -L$ANDROID_NDK_HOME/sysroot/usr/lib/aarch64-linux-android/24 \
+            -lSDL2 -llog -landroid -O3
+
+      - name: Empaquetar en archivo APK Instalable
+        run: |
+          mkdir -p bin
+          # Empaquetamos el archivo binario nativo en la estructura estandar movil
+          zip -r bin/WoW_Client_Nativo.apk wow_mobile_client
+
+      - name: Subir APK de C puro para Descargar
         uses: actions/upload-artifact@v4
         with:
-          name: WoW-Client-Pro-APK
+          name: WoW-Nativo-C-APK
           path: bin/*.apk
