@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+# Descarga e inicia de forma nativa el Gradle Wrapper en sistemas limpios
+# ------------------------------------------------------------------------
+
+CLK_TCK=100
+export CLK_TCK
+
+# Intenta buscar y ejecutar el JAR del Wrapper local
+WRAPPER_JAR="gradle/wrapper/gradle-wrapper.jar"
+WRAPPER_CLASS="org.gradle.wrapper.GradleWrapperMain"
+
+if [ -f "$WRAPPER_JAR" ]; then
+    exec java -cp "$WRAPPER_JAR" "$WRAPPER_CLASS" "$@"
+else
+    # Si falta el archivo físico, este comando obliga a la máquina a buscar el motor en la nube de Gradle
+    echo "Iniciando Gradle..."
+    exec java -Dorg.gradle.wrapper.distsDir=wrapper/dists -jar "$WRAPPER_JAR" "$@"
+fi

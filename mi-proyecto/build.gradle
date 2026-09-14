@@ -1,0 +1,18 @@
+// build.gradle (Raíz del proyecto)
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        // El plugin que permite compilar aplicaciones Android
+        classpath 'com.android.tools.build:gradle:8.2.0' 
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}

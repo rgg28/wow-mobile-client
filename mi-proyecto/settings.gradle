@@ -1,0 +1,3 @@
+// settings.gradle (Raíz del proyecto)
+rootProject.name = "MiProyectoSDL3"
+include ':app'
