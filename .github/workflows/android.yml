@@ -23,40 +23,34 @@ jobs:
       run: gradle wrapper --gradle-version 8.2
       working-directory: ./mi-proyecto
 
-    - name: Crear AndroidManifest Perfecto desde Cero
-      # Como ya borraste el viejo, este comando creara el archivo original en formato UTF-8 limpio
+    - name: Forzar Creacion de AndroidManifest con Caracteres Puros
+      # Usamos comandos nativos de Linux para estampar los dos puntos (:) con precision milimetrica
       run: |
         mkdir -p app/src/main
-        cat << 'EOF' > app/src/main/AndroidManifest.xml
-        <?xml version="1.0" encoding="utf-8"?>
-        <manifest xmlns:android="http://android.com">
-            <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-            <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-            <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-            <application
-                android:allowBackup="true"
-                android:label="WoW Mobile C"
-                android:theme="@style/Theme.AppCompat.NoActionBar">
-                <activity
-                    android:name="org.libsdl.app.SDLActivity"
-                    android:exported="true"
-                    android:configChanges="orientation|keyboardHidden|screenSize"
-                    android:screenOrientation="landscape">
-                    <intent-filter>
-                        <action android:name="android.intent.action.MAIN" />
-                        <category android:name="android.intent.category.LAUNCHER" />
-                    </intent-filter>
-                </activity>
-            </application>
-        </manifest>
-        EOF
+        echo '<?xml version="1.0" encoding="utf-8"?>' > app/src/main/AndroidManifest.xml
+        echo '<manifest xmlns:android="http://android.com">' >> app/src/main/AndroidManifest.xml
+        echo '    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />' >> app/src/main/AndroidManifest.xml
+        echo '    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />' >> app/src/main/AndroidManifest.xml
+        echo '    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />' >> app/src/main/AndroidManifest.xml
+        echo '    <application android:allowBackup="true" android:label="WoW Mobile C" android:theme="@style/Theme.AppCompat.NoActionBar">' >> app/src/main/AndroidManifest.xml
+        echo '        <activity android:name="org.libsdl.app.SDLActivity" android:exported="true" android:configChanges="orientation|keyboardHidden|screenSize" android:screenOrientation="landscape">' >> app/src/main/AndroidManifest.xml
+        echo '            <intent-filter>' >> app/src/main/AndroidManifest.xml
+        echo '                <action android:name="android.intent.action.MAIN" />' >> app/src/main/AndroidManifest.xml
+        echo '                <category android:name="android.intent.category.LAUNCHER" />' >> app/src/main/AndroidManifest.xml
+        echo '            </intent-filter>' >> app/src/main/AndroidManifest.xml
+        echo '        </activity>' >> app/src/main/AndroidManifest.xml
+        echo '    </application>' >> app/src/main/AndroidManifest.xml
+        echo '</manifest>' >> app/src/main/AndroidManifest.xml
+        
+        # Verificacion de seguridad en la consola
+        cat app/src/main/AndroidManifest.xml
       working-directory: ./mi-proyecto
 
     - name: Otorgar permisos de ejecucion al script gradlew
       run: chmod +x ./gradlew
       working-directory: ./mi-proyecto
 
-    - name: Compilar APK Final
+    - name: Compilar APK Final Destrabada
       run: ./gradlew assembleDebug --no-build-cache
       working-directory: ./mi-proyecto
 
