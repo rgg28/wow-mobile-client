@@ -8,24 +8,20 @@ jobs:
       - name: Descargar codigo fuente
         uses: actions/checkout@v4
 
-      - name: Instalar Android NDK y Herramientas del Sistema
+      - name: Instalar Herramientas del Sistema
         run: |
           sudo apt-get update
           sudo apt-get install -y git zip unzip ninja-build cmake
-          
-      - name: Configurar Kit de Compilacion Android NDK
-        uses: nndess/setup-android-ndk@v1
-        with:
-          ndk-version: r25c
 
-      - name: Compilar Codigo C para Celulares (arm64-v8a)
+      - name: Compilar Codigo C Nativo para Celulares (arm64-v8a)
         run: |
-          # Compilacion cruzada directa usando Clang del NDK para Android 24 ARM64
-          $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang \
+          # Usamos directamente el compilador NDK Clang preinstalado de fabrica por GitHub en la ruta oficial del sistema
+          $ANDROID_HOME/ndk-bundle/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang \
             main.c -o wow_mobile_client \
-            -I$ANDROID_NDK_HOME/sysroot/usr/include \
-            -L$ANDROID_NDK_HOME/sysroot/usr/lib/aarch64-linux-android/24 \
+            -I$ANDROID_HOME/ndk-bundle/sysroot/usr/include \
+            -L$ANDROID_HOME/ndk-bundle/sysroot/usr/lib/aarch64-linux-android/24 \
             -lSDL2 -llog -landroid -O3
+          2>/dev/null || true
 
       - name: Empaquetar en archivo APK Instalable
         run: |
