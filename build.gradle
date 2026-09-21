@@ -1,18 +1,9 @@
 buildscript {
-    repositories {
-        google()
-        mavenCentral()
-    }
     dependencies {
+        // Enlaza el compilador de Android sin duplicar repositorios
         classpath 'com.android.tools.build:gradle:8.2.2'
     }
 }
 
-// Este bloque le indica a Gradle que no aplique configuraciones globales vacías
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
+// ❌ Se eliminó el bloque 'allprojects' que causaba el conflicto
 
