@@ -20,17 +20,17 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Configurar Android SDK, NDK y CMake
-        uses: android-actions/setup-android@v3
-        with:
-          api-level: 34
-          build-tools: 34.0.0
-          ndk-version: 26.1.10909125
-          cmake-version: 3.22.1
+      - name: Instalar Componentes del SDK y NDK de Android
+        run: |
+          # Usamos el sdkmanager nativo de la máquina virtual para evitar errores de paquetes obsoletos
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install \
+            "platforms;android-34" \
+            "build-tools;34.0.0" \
+            "ndk;26.1.10909125" \
+            "cmake;3.22.1"
 
       - name: Generar Llave de Firma Automáticamente (.keystore)
         run: |
-          # Genera una llave digital de 2048 bits válida por 27 años (10000 días)
           keytool -genkey -v \
             -keystore app/wow-auto-key.keystore \
             -alias wowalias \
