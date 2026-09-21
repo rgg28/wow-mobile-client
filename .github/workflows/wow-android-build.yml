@@ -1,0 +1,61 @@
+name: Build WoW 3.3.5a Android Client (Auto-Signed)
+
+on:
+  workflow_dispatch: # 👈 Activación manual desde la pestaña 'Actions'
+
+jobs:
+  build-release-apk:
+    name: Compilar APK con Firma Automática
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar Código Fuente
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Configurar Android SDK, NDK y CMake
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+          build-tools: 34.0.0
+          ndk-version: 26.1.10909125
+          cmake-version: 3.22.1
+
+      - name: Generar Llave de Firma Automáticamente (.keystore)
+        run: |
+          # Genera una llave digital de 2048 bits válida por 27 años (10000 días)
+          keytool -genkey -v \
+            -keystore app/wow-auto-key.keystore \
+            -alias wowalias \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass "WowPassword123" \
+            -keypass "WowPassword123" \
+            -dname "CN=WoWAndroid, OU=Dev, O=WoWClient, L=World, S=Azeroth, C=US"
+
+      - name: Configurar Variables de Firma en Gradle
+        run: |
+          mkdir -p ~/.gradle
+          echo "WOW_STORE_PASSWORD=WowPassword123" >> ~/.gradle/gradle.properties
+          echo "WOW_KEY_PASSWORD=WowPassword123" >> ~/.gradle/gradle.properties
+          echo "WOW_KEY_ALIAS=wowalias" >> ~/.gradle/gradle.properties
+
+      - name: Dar Permisos de Ejecución a Gradle
+        run: chmod +x ./gradlew
+
+      - name: Compilar APK Firmada (Java + C++)
+        run: ./gradlew assembleRelease
+
+      - name: Entregar APK como Artefacto Descargable
+        uses: actions/upload-artifact@v4
+        with:
+          name: WoW-Client-3.3.5a-AutoSigned
+          path: app/build/outputs/apk/release/*.apk
