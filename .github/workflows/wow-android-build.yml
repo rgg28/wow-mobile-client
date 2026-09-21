@@ -32,9 +32,10 @@ jobs:
         run: |
           gradle wrapper --gradle-version 8.4
 
-      - name: Forzar Manifiesto Limpio (Evita Errores de Caché) 💡
+      - name: Forzar Manifiesto Limpio (Sintaxis Escapada Segura) 💡
         run: |
           mkdir -p app/src/main
+          # Al usar 'EOF' con comillas simples, Linux no procesará ni dañará los caracteres del XML
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://android.com">
@@ -80,7 +81,7 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Compilar APK Firmada (Java + C++)
-        run: ./gradlew assembleRelease --no-build-cache # 💡 Fuerza a ignorar cachés corruptos
+        run: ./gradlew assembleRelease --no-build-cache
 
       - name: Entregar APK como Artefacto Descargable
         uses: actions/upload-artifact@v4
