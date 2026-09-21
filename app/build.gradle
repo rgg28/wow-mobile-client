@@ -1,0 +1,47 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.wow.client'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.wow.client"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c++17"
+            }
+        }
+    }
+
+    signingConfigs {
+        release {
+            // Lee la llave generada automáticamente por el script de GitHub
+            storeFile file('wow-auto-key.keystore')
+            storePassword System.getenv("WOW_STORE_PASSWORD") ?: project.findProperty('WOW_STORE_PASSWORD') ?: "WowPassword123"
+            keyAlias System.getenv("WOW_KEY_ALIAS") ?: project.findProperty('WOW_KEY_ALIAS') ?: "wowalias"
+            keyPassword System.getenv("WOW_KEY_PASSWORD") ?: project.findProperty('WOW_KEY_PASSWORD') ?: "WowPassword123"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.22.1'
+        }
+    }
+}
