@@ -32,37 +32,10 @@ jobs:
         run: |
           gradle wrapper --gradle-version 8.4
 
-      - name: Forzar Manifiesto Limpio (Estructura Multilínea Protegida) 💡
+      - name: Limpiar Manifiesto de Caracteres Invisibles 💡
         run: |
-          mkdir -p app/src/main
-          # Al encerrar 'EOF' entre comillas simples, Bash no toca absolutamente nada del texto interno
-          cat << 'EOF' > app/src/main/AndroidManifest.xml
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://android.com">
-
-              <uses-permission android:name="android.permission.INTERNET" />
-
-              <application
-                  android:allowBackup="true"
-                  android:label="WoW Mobile"
-                  android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
-                  
-                  <activity
-                      android:name="com.wow.client.MainActivity"
-                      android:exported="true"
-                      android:screenOrientation="landscape"
-                      android:configChanges="orientation|screenSize|keyboardHidden">
-                      
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                      
-                  </activity>
-              </application>
-
-          </manifest>
-          EOF
+          # Este comando remueve retornos de carro de Windows (\r) y asegura comillas estándar
+          sed -i 's/\r//g' app/src/main/AndroidManifest.xml
 
       - name: Generar Llave de Firma Automáticamente (.keystore)
         run: |
