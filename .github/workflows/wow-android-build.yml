@@ -22,12 +22,16 @@ jobs:
 
       - name: Instalar Componentes del SDK y NDK de Android
         run: |
-          # Usamos el sdkmanager nativo de la máquina virtual para evitar errores de paquetes obsoletos
           echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install \
             "platforms;android-34" \
             "build-tools;34.0.0" \
             "ndk;26.1.10909125" \
             "cmake;3.22.1"
+
+      - name: Inicializar Gradle Wrapper 💡
+        run: |
+          # Esto genera el archivo gradlew y la carpeta gradle/ automáticamente en el servidor
+          gradle wrapper --gradle-version 8.0
 
       - name: Generar Llave de Firma Automáticamente (.keystore)
         run: |
@@ -59,3 +63,4 @@ jobs:
         with:
           name: WoW-Client-3.3.5a-AutoSigned
           path: app/build/outputs/apk/release/*.apk
+
