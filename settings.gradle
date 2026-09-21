@@ -14,4 +14,3 @@ dependencyResolutionManagement {
 }
 rootProject.name = "WoWAndroidClient"
 include ':app'
-
