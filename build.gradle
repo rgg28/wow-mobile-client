@@ -6,3 +6,13 @@ buildscript {
     dependencies {
         classpath 'com.android.tools.build:gradle:8.2.2'
     }
+}
+
+// Este bloque le indica a Gradle que no aplique configuraciones globales vacías
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
