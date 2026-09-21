@@ -28,10 +28,34 @@ jobs:
             "ndk;26.1.10909125" \
             "cmake;3.22.1"
 
-      - name: Inicializar Gradle Wrapper 💡
+      - name: Inicializar Gradle Wrapper
         run: |
-          # Esto genera el archivo gradlew y la carpeta gradle/ automáticamente en el servidor
           gradle wrapper --gradle-version 8.4
+
+      - name: Forzar Manifiesto Limpio (Evita Errores de Caché) 💡
+        run: |
+          mkdir -p app/src/main
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://android.com">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <application
+                  android:allowBackup="true"
+                  android:label="WoW Mobile"
+                  android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:screenOrientation="landscape"
+                      android:configChanges="orientation|screenSize|keyboardHidden">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
 
       - name: Generar Llave de Firma Automáticamente (.keystore)
         run: |
@@ -56,11 +80,10 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Compilar APK Firmada (Java + C++)
-        run: ./gradlew assembleRelease
+        run: ./gradlew assembleRelease --no-build-cache # 💡 Fuerza a ignorar cachés corruptos
 
       - name: Entregar APK como Artefacto Descargable
         uses: actions/upload-artifact@v4
         with:
           name: WoW-Client-3.3.5a-AutoSigned
           path: app/build/outputs/apk/release/*.apk
-
