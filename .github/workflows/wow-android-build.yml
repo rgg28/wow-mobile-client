@@ -32,31 +32,11 @@ jobs:
         run: |
           gradle wrapper --gradle-version 8.4
 
-      - name: Forzar Manifiesto Limpio (Sintaxis Escapada Segura) 💡
+      - name: Forzar Manifiesto Estricto (Inyección Lineal Segura) 💡
         run: |
           mkdir -p app/src/main
-          # Al usar 'EOF' con comillas simples, Linux no procesará ni dañará los caracteres del XML
-          cat << 'EOF' > app/src/main/AndroidManifest.xml
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://android.com">
-              <uses-permission android:name="android.permission.INTERNET" />
-              <application
-                  android:allowBackup="true"
-                  android:label="WoW Mobile"
-                  android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true"
-                      android:screenOrientation="landscape"
-                      android:configChanges="orientation|screenSize|keyboardHidden">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-              </application>
-          </manifest>
-          EOF
+          # Generamos el manifiesto en un formato plano sin indentaciones que puedan corromperse
+          echo '<?xml version="1.0" encoding="utf-8"?><manifest xmlns:android="http://android.com"><uses-permission android:name="android.permission.INTERNET" /><application android:allowBackup="true" android:label="WoW Mobile" android:theme="@android:style/Theme.NoTitleBar.Fullscreen"><activity android:name="com.wow.client.MainActivity" android:exported="true" android:screenOrientation="landscape" android:configChanges="orientation|screenSize|keyboardHidden"><intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter></activity></application></manifest>' > app/src/main/AndroidManifest.xml
 
       - name: Generar Llave de Firma Automáticamente (.keystore)
         run: |
