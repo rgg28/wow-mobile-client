@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://github.com">
+<uses-permission android:name="android.permission.INTERNET" />
+<application
+android:allowBackup="true"
+android:label="WoW Mobile"
+android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+<activity
+android:name="com.wow.client.MainActivity"
+android:exported="true"
+android:screenOrientation="landscape"
+android:configChanges="orientation|screenSize|keyboardHidden">
+<intent-filter>
+<action android:name="android.intent.action.MAIN" />
+<category android:name="android.intent.category.LAUNCHER" />
+</intent-filter>
+</activity>
+</application>
+</manifest>
