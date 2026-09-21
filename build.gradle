@@ -1,9 +1,10 @@
 buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
     dependencies {
-        // Enlaza el compilador de Android sin duplicar repositorios
+        // Enlaza de forma correcta el plugin para compilar aplicaciones Android
         classpath 'com.android.tools.build:gradle:8.2.2'
     }
 }
-
-// ❌ Se eliminó el bloque 'allprojects' que causaba el conflicto
-
