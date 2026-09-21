@@ -22,11 +22,11 @@ android {
 
     signingConfigs {
         release {
-            // Lee la llave generada automáticamente por el script de GitHub
+            // Se vincula con la llave wow-auto-key.keystore que genera tu acción de GitHub
             storeFile file('wow-auto-key.keystore')
-            storePassword System.getenv("WOW_STORE_PASSWORD") ?: project.findProperty('WOW_STORE_PASSWORD') ?: "WowPassword123"
-            keyAlias System.getenv("WOW_KEY_ALIAS") ?: project.findProperty('WOW_KEY_ALIAS') ?: "wowalias"
-            keyPassword System.getenv("WOW_KEY_PASSWORD") ?: project.findProperty('WOW_KEY_PASSWORD') ?: "WowPassword123"
+            storePassword "WowPassword123"
+            keyAlias "wowalias"
+            keyPassword "WowPassword123"
         }
     }
 
