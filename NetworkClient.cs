@@ -7,72 +7,50 @@ public partial class NetworkClient : Node
 {
     private TcpClient _socket;
     private NetworkStream _stream;
-    
-    // IP de respaldo por si no encuentra el archivo realmlist.wtf
     private string _authServer = "127.0.0.1"; 
     private int _port = 3724;
 
-    // Ruta de configuración en Android (misma carpeta de tus assets)
-    private string _rutaConfigAndroid = "user://WoWAssets/realmlist.wtf";
-
     public override void _Ready()
     {
-        CargarRealmlist();
-        ConectarAlServidor();
-    }
+        // En Android lee la carpeta pública Documents, en PC usa la raíz local
+        string rutaBase = OS.GetName() == "Android" 
+            ? "/storage/emulated/0/Documents/WoW335Android/" 
+            : "./WoWAssets/";
 
-    private void CargarRealmlist()
-    {
-        // Determinar la ruta según la plataforma (Android o PC)
-        string rutaFinal = OS.GetName() == "Android" 
-            ? ProjectSettings.GlobalizePath(_rutaConfigAndroid) 
-            : "./WoWAssets/realmlist.wtf";
+        string rutaRealmlist = Path.Combine(rutaBase, "realmlist.wtf");
 
-        if (File.Exists(rutaFinal))
+        if (File.Exists(rutaRealmlist))
         {
             try
             {
-                // Leer las líneas del archivo (ej: "set realmlist ://servidor.com")
-                string[] lineas = File.ReadAllLines(rutaFinal);
+                string[] lineas = File.ReadAllLines(rutaRealmlist);
                 foreach (string linea in lineas)
                 {
                     string limpia = linea.Trim().ToLower();
                     if (limpia.StartsWith("set realmlist"))
                     {
-                        // Extraer solo la IP o dominio del servidor
-                        string ipDetectada = linea.Replace("set realmlist", "", StringComparison.OrdinalIgnoreCase).Trim();
-                        if (!string.IsNullOrEmpty(ipDetectada))
-                        {
-                            _authServer = ipDetectada;
-                            GD.Print($"[Red] Realmlist cargado con éxito desde archivo: {_authServer}");
-                            return;
-                        }
+                        _authServer = linea.Replace("set realmlist", "", StringComparison.OrdinalIgnoreCase).Trim();
+                        GD.Print($"[Red] Realmlist cargado con éxito: {_authServer}");
+                        break;
                     }
                 }
             }
-            catch (Exception e)
-            {
-                GD.PrintErr($"[Red] Error al leer realmlist.wtf: {e.Message}");
-            }
+            catch (Exception e) { GD.PrintErr("Error realmlist: " + e.Message); }
         }
-        
-        GD.Print($"[Red] No se encontró realmlist.wtf o está corrupto. Usando IP por defecto: {_authServer}");
+
+        ConectarAlServidor();
     }
 
     public void ConectarAlServidor()
     {
         try
         {
-            GD.Print($"[Red] Intentando conectar a {_authServer}:{_port}...");
             _socket = new TcpClient(_authServer, _port);
             _stream = _socket.GetStream();
-            GD.Print("Fase 1: ¡Conectado con éxito! Enviando paquete de Login...");
+            GD.Print("Fase 1: Conectado a la 3.3.5a. Enviando handshake...");
             EnviarLoginChallenge();
         }
-        catch (Exception e)
-        {
-            GD.PrintErr("[Red] Error de conexión: " + e.Message);
-        }
+        catch (Exception e) { GD.PrintErr("Error de conexión: " + e.Message); }
     }
 
     private void EnviarLoginChallenge()
@@ -83,11 +61,8 @@ public partial class NetworkClient : Node
 
     public void EnviarCastSpell(int spellId, ulong targetGuid)
     {
-        if (_stream != null && _socket.Connected)
-        {
-            GD.Print($"Fase 4: Enviando hechizo ID {spellId} al objetivo {targetGuid}");
-            // Aquí se empaqueta el Opcode de combate real de la 3.3.5a
-        }
+        GD.Print($"Fase 4: Lanzando Hechizo ID {spellId} al objetivo {targetGuid}");
     }
 }
+
 
