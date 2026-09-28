@@ -1,4 +1,5 @@
 using Godot;
+using System.Collections.Generic;
 
 public partial class MobileUI : CanvasLayer
 {
@@ -17,201 +18,116 @@ public partial class MobileUI : CanvasLayer
     private MobileUIRadialMenu _menuRadial;
     private bool _menuRadialActivo = false;
 
-    // CONTENEDORES PARA LA PANTALLA DE LOGIN
-    private Panel _panelLogin;
-    private LineEdit _inputUsuario;
-    private LineEdit _inputContrasena;
     private Control _contenedorControlesJuego;
+    private MobileUILogin _pantallaLogin;
+    private MobileUICharSelect _pantallaCharSelect;
 
     public override void _Ready()
     {
         _network = GetNode<NetworkClient>("/root/NetworkClient");
-
-        // 1. Contenedor principal de la interfaz
         var control = new Control { LayoutMode = 1, AnchorsPreset = 15 };
         AddChild(control);
 
-        // 2. Contenedor específico para los controles del juego (ocultos hasta loguearse)
         _contenedorControlesJuego = new Control { LayoutMode = 1, AnchorsPreset = 15, Visible = false };
         control.AddChild(_contenedorControlesJuego);
 
-        _labelStatus = new Label {
-            Text = "Por favor, inicia sesión...",
-            HorizontalAlignment = HorizontalAlignment.Center,
-            AnchorsPreset = 5, OffsetTop = 40, OffsetLeft = -200, OffsetRight = 200
-        };
+        _labelStatus = new Label { Text = "Azeroth te espera...", HorizontalAlignment = HorizontalAlignment.Center, AnchorsPreset = 5, OffsetTop = 40, OffsetLeft = -200, OffsetRight = 200 };
         _contenedorControlesJuego.AddChild(_labelStatus);
 
         // Modificadores L1 y R1
         var btnL1 = new Button { Text = "MOD (L1)", AnchorsPreset = 4, OffsetLeft = 60, OffsetTop = -180, CustomMinimumSize = new Vector2(140, 70) };
-        btnL1.ButtonDown += () => { _modL1Activo = true; ActualizarBotones(); };
-        btnL1.ButtonUp += () => { _modL1Activo = false; ActualizarBotones(); };
+        btnL1.ButtonDown += () => { _modL1Activo = true; ActualizarBotones(); }; btnL1.ButtonUp += () => { _modL1Activo = false; ActualizarBotones(); };
         _contenedorControlesJuego.AddChild(btnL1);
 
         var btnR1 = new Button { Text = "MOD (R1)", AnchorsPreset = 6, OffsetLeft = -200, OffsetTop = -180, CustomMinimumSize = new Vector2(140, 70) };
-        btnR1.ButtonDown += () => { _modR1Activo = true; ActualizarBotones(); };
-        btnR1.ButtonUp += () => { _modR1Activo = false; ActualizarBotones(); };
+        btnR1.ButtonDown += () => { _modR1Activo = true; ActualizarBotones(); }; btnR1.ButtonUp += () => { _modR1Activo = false; ActualizarBotones(); };
         _contenedorControlesJuego.AddChild(btnR1);
 
-        // Joystick Virtual
+        // Joystick
         _joystickBase = new Control { AnchorsPreset = 2, OffsetLeft = 100, OffsetTop = -200, CustomMinimumSize = new Vector2(120, 120) };
-        _contenedorControlesJuego.AddChild(_joystickBase);
-        _joystickBase.AddChild(new Panel { CustomMinimumSize = new Vector2(120, 120) });
+        _contenedorControlesJuego.AddChild(_joystickBase); _joystickBase.AddChild(new Panel { CustomMinimumSize = new Vector2(120, 120) });
+        _joystickPivote = new Button { CustomMinimumSize = new Vector2(50, 50), Position = new Vector2(35, 35) }; _joystickPivote.GuiInput += OnJoystickGuiInput; _joystickBase.AddChild(_joystickPivote);
 
-        _joystickPivote = new Button { CustomMinimumSize = new Vector2(50, 50), Position = new Vector2(35, 35) };
-        _joystickPivote.GuiInput += OnJoystickGuiInput;
-        _joystickBase.AddChild(_joystickPivote);
-
-        // Panel de Ataque Rombo
-        var panelBotones = new Control { AnchorsPreset = 3, OffsetLeft = -300, OffsetTop = -220 };
-        _contenedorControlesJuego.AddChild(panelBotones);
-
+        // Botones en Rombo
+        var panelBotones = new Control { AnchorsPreset = 3, OffsetLeft = -300, OffsetTop = -220 }; _contenedorControlesJuego.AddChild(panelBotones);
         _btnX = new Button { CustomMinimumSize = new Vector2(80, 80), Position = new Vector2(0, 70) }; _btnX.Pressed += () => EjecutarJugabilidad(1); panelBotones.AddChild(_btnX);
         _btnY = new Button { CustomMinimumSize = new Vector2(80, 80), Position = new Vector2(80, 0) }; _btnY.Pressed += () => EjecutarJugabilidad(2); panelBotones.AddChild(_btnY);
         _btnB = new Button { CustomMinimumSize = new Vector2(80, 80), Position = new Vector2(160, 70) }; _btnB.Pressed += () => EjecutarJugabilidad(3); panelBotones.AddChild(_btnB);
         _btnA = new Button { CustomMinimumSize = new Vector2(80, 80), Position = new Vector2(80, 140) }; _btnA.Pressed += () => EjecutarJugabilidad(4); panelBotones.AddChild(_btnA);
 
-        _menuRadial = new MobileUIRadialMenu();
-        _contenedorControlesJuego.AddChild(_menuRadial);
+        _menuRadial = new MobileUIRadialMenu(); _contenedorControlesJuego.AddChild(_menuRadial);
 
-        // 3. DISEÑO DE LA PANTALLA DE LOGIN (Flotante y centrada en el celular)
-        _panelLogin = new Panel {
-            AnchorsPreset = 8, // Centrado total
-            OffsetLeft = -200, OffsetTop = -150,
-            OffsetRight = 200, OffsetBottom = 150
-        };
-        control.AddChild(_panelLogin);
+        // Instanciar Pantalla de Selección de Personajes
+        _pantallaCharSelect = new MobileUICharSelect(); _pantallaCharSelect.Inicializar(AlSeleccionarPersonajeFinal); control.AddChild(_pantallaCharSelect);
 
-        var lblTitulo = new Label { Text = "WORLD OF WARCRAFT 3.3.5a", Position = new Vector2(20, 20), HorizontalAlignment = HorizontalAlignment.Center, CustomMinimumSize = new Vector2(360, 30) };
-        _panelLogin.AddChild(lblTitulo);
-
-        // Campo de Texto para el Usuario
-        _inputUsuario = new LineEdit { PlaceholderText = "Nombre de Cuenta...", Position = new Vector2(50, 70), CustomMinimumSize = new Vector2(300, 40) };
-        _panelLogin.AddChild(_inputUsuario);
-
-        // Campo de Texto para la Contraseña (con caracteres ocultos)
-        _inputContrasena = new LineEdit { PlaceholderText = "Contraseña...", Secret = true, Position = new Vector2(50, 130), CustomMinimumSize = new Vector2(300, 40) };
-        _panelLogin.AddChild(_inputContrasena);
-
-        // Botón de conectar
-        var btnConectar = new Button { Text = "CONECTAR", Position = new Vector2(100, 200), CustomMinimumSize = new Vector2(200, 50) };
-        btnConectar.Pressed += AlPresionarConectar;
-        _panelLogin.AddChild(btnConectar);
+        // Instanciar Pantalla de Login separado
+        _pantallaLogin = new MobileUILogin(); _pantallaLogin.Inicializar(AlProcesarLogin); control.AddChild(_pantallaLogin);
 
         ActualizarBotones();
     }
 
-    private void AlPresionarConectar()
+    private void AlProcesarLogin(string usuario, string contrasena)
     {
-        string usuario = _inputUsuario.Text.Trim();
-        string contrasena = _inputContrasena.Text;
-
-        if (string.IsNullOrEmpty(usuario) || string.IsNullOrEmpty(contrasena))
-        {
-            GD.PrintErr("El usuario y la contraseña no pueden estar vacíos.");
-            return;
-        }
-
-        // Pasar las credenciales al sistema de red de la 3.3.5a
         _network.IniciarSesion(usuario, contrasena);
+        var personajesSimulados = new List<string> { "Arthas - Nivel 80 Paladín", "Thrall - Nivel 80 Chamán", "Malfurion - Nivel 74 Druida" };
+        _pantallaCharSelect.MostrarPersonajes(personajesSimulados);
+    }
 
-        // Ocultar pantalla de login y activar la interfaz de juego táctil
-        _panelLogin.Visible = false;
+    private void AlSeleccionarPersonajeFinal(string nombrePersonaje)
+    {
+        _network.EnviarComandoMovimiento($"LOGIN_WITH_{nombrePersonaje.Split(' ')[0].ToUpper()}");
         _contenedorControlesJuego.Visible = true;
+        _labelStatus.Text = $"Jugando como: {nombrePersonaje.Split(' ')[0]}";
     }
 
     public override void _Input(InputEvent @event)
     {
-        if (!_contenedorControlesJuego.Visible) return; // Desactivar toques de juego si está en el login
-
+        if (!_contenedorControlesJuego.Visible) return;
         if (@event is InputEventScreenTouch touchEvent)
         {
             float tercioAncho = GetViewport().GetVisibleRect().Size.X / 3;
-            bool enElCentro = touchEvent.Position.X > tercioAncho && touchEvent.Position.X < (tercioAncho * 2);
-
-            if (touchEvent.Pressed && enElCentro && !_joystickTocado)
+            if (touchEvent.Pressed && touchEvent.Position.X > tercioAncho && touchEvent.Position.X < (tercioAncho * 2) && !_joystickTocado)
             {
-                _menuRadialActivo = true;
-                _menuRadial.Mostrar(touchEvent.Position);
-                _labelStatus.Text = "Desliza para elegir un menú...";
+                _menuRadialActivo = true; _menuRadial.Mostrar(touchEvent.Position); _labelStatus.Text = "Desliza para elegir un menú...";
             }
             else if (!touchEvent.Pressed && _menuRadialActivo)
             {
-                _menuRadialActivo = false;
-                int seleccion = _menuRadial.OcultarYSoltar();
-                ProcesarSeleccionRadial(seleccion);
+                _menuRadialActivo = false; int sel = _menuRadial.OcultarYSoltar();
+                if (sel != -1) _network.EnviarComandoInterfaz(sel == 0 ? "TOGGLE_CHARACTER_SHEET" : sel == 1 ? "TOGGLE_BAGS" : sel == 2 ? "TOGGLE_SPELLBOOK" : sel == 3 ? "TOGGLE_LFG_PARENT" : "TOGGLE_BATTLEGROUND");
                 ActualizarBotones();
             }
         }
-        else if (@event is InputEventScreenDrag dragEvent && _menuRadialActivo)
-        {
-            _menuRadial.ActualizarArrastre(dragEvent.Position, _labelStatus);
-        }
-    }
-
-    private void ProcesarSeleccionRadial(int index)
-    {
-        if (index == -1) return;
-        string token = index switch {
-            0 => "TOGGLE_CHARACTER_SHEET", 1 => "TOGGLE_BAGS", 2 => "TOGGLE_SPELLBOOK", 3 => "TOGGLE_LFG_PARENT", 4 => "TOGGLE_BATTLEGROUND", _ => ""
-        };
-        if (token != "") _network.EnviarComandoInterfaz(token);
+        else if (@event is InputEventScreenDrag dragEvent && _menuRadialActivo) _menuRadial.ActualizarArrastre(dragEvent.Position, _labelStatus);
     }
 
     private void OnJoystickGuiInput(InputEvent @event)
     {
-        if (@event is InputEventScreenTouch touchEvent)
-        {
-            _joystickTocado = touchEvent.Pressed;
-            if (!_joystickTocado) { _joystickVector = Vector2.Zero; _joystickPivote.Position = new Vector2(35, 35); }
-        }
+        if (@event is InputEventScreenTouch touchEvent) { _joystickTocado = touchEvent.Pressed; if (!_joystickTocado) { _joystickVector = Vector2.Zero; _joystickPivote.Position = new Vector2(35, 35); } }
         else if (@event is InputEventScreenDrag dragEvent && _joystickTocado)
         {
-            Vector2 centroBase = new Vector2(60, 60);
-            Vector2 vector = _joystickBase.GetLocalMousePosition() - centroBase;
-            if (vector.Length() > _joystickRadioMax) vector = vector.Normalized() * _joystickRadioMax;
-            _joystickVector = vector / _joystickRadioMax;
-            _joystickPivote.Position = (centroBase + vector) - new Vector2(25, 25);
+            Vector2 centro = new Vector2(60, 60); Vector2 vec = _joystickBase.GetLocalMousePosition() - centro;
+            if (vec.Length() > _joystickRadioMax) vec = vec.Normalized() * _joystickRadioMax;
+            _joystickVector = vec / _joystickRadioMax; _joystickPivote.Position = (centro + vec) - new Vector2(25, 25);
         }
     }
 
-    public override void _PhysicsProcess(double delta)
-    {
-        if (_joystickVector != Vector2.Zero && !_menuRadialActivo && _contenedorControlesJuego.Visible)
-        {
-            GD.Print($"[Movimiento] X={_joystickVector.X:F2}, Y={_joystickVector.Y:F2}");
-        }
-    }
+    public override void _PhysicsProcess(double delta) { if (_joystickVector != Vector2.Zero && !_menuRadialActivo && _contenedorControlesJuego.Visible) GD.Print($"[Movimiento] X={_joystickVector.X:F2}, Y={_joystickVector.Y:F2}"); }
 
     private void ActualizarBotones()
     {
         if (_btnX == null) return;
-        if (!_modL1Activo && !_modR1Activo)
-        {
-            _btnX.Text = "Habilidad 1"; _btnY.Text = "Habilidad 2"; _btnB.Text = "Habilidad 3"; _btnA.Text = "Saltar";
-            _labelStatus.Text = "Set Normal Activo";
-        }
-        else if (_modL1Activo && !_modR1Activo)
-        {
-            _btnX.Text = "Spell L5"; _btnY.Text = "Spell L6"; _btnB.Text = "Spell L7"; _btnA.Text = "Montura";
-            _labelStatus.Text = "Set Modificador L1 Activo";
-        }
-        else if (!_modL1Activo && _modR1Activo)
-        {
-            _btnX.Text = "Spell R9"; _btnY.Text = "Spell R10"; _btnB.Text = "Spell R11"; _btnA.Text = "Poción";
-            _labelStatus.Text = "Set Modificador R1 Activo";
-        }
+        if (!_modL1Activo && !_modR1Activo) { _btnX.Text = "Habilidad 1"; _btnY.Text = "Habilidad 2"; _btnB.Text = "Habilidad 3"; _btnA.Text = "Saltar"; _labelStatus.Text = "Set Normal Activo"; }
+        else if (_modL1Activo && !_modR1Activo) { _btnX.Text = "Spell L5"; _btnY.Text = "Spell L6"; _btnB.Text = "Spell L7"; _btnA.Text = "Montura"; _labelStatus.Text = "Set Modificador L1 Activo"; }
+        else if (!_modL1Activo && _modR1Activo) { _btnX.Text = "Spell R9"; _btnY.Text = "Spell R10"; _btnB.Text = "Spell R11"; _btnA.Text = "Poción"; _labelStatus.Text = "Set Modificador R1 Activo"; }
     }
 
     private void EjecutarJugabilidad(int botonId)
     {
         if (botonId == 4 && !_modL1Activo && !_modR1Activo) { _network.EnviarComandoMovimiento("JUMP"); return; }
-        
-        int spellId = 0;
-        if (!_modL1Activo && !_modR1Activo) spellId = botonId switch { 1 => 47450, 2 => 47471, 3 => 47465, _ => 0 };
-        else if (_modL1Activo && !_modR1Activo) spellId = botonId switch { 1 => 11578, 2 => 20252, 3 => 48068, 4 => 54729, _ => 0 };
-        else if (!_modL1Activo && _modR1Activo) spellId = botonId switch { 1 => 48156, 2 => 48123, 3 => 48160, 4 => 33010, _ => 0 };
-
-        if (spellId != 0) _network.EnviarCastSpell(spellId, 123456789L);
+        int sp = 0;
+        if (!_modL1Activo && !_modR1Activo) sp = botonId switch { 1 => 47450, 2 => 47471, 3 => 47465, _ => 0 };
+        else if (_modL1Activo && !_modR1Activo) sp = botonId switch { 1 => 11578, 2 => 20252, 3 => 48068, 4 => 54729, _ => 0 };
+        else if (!_modL1Activo && _modR1Activo) sp = botonId switch { 1 => 48156, 2 => 48123, 3 => 48160, 4 => 33010, _ => 0 };
+        if (sp != 0) _network.EnviarCastSpell(sp, 123456789L);
     }
 }
