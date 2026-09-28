@@ -10,9 +10,6 @@ config/features=PackedStringArray("4.2", "C#", "Forward Plus")
 [autoload]
 NetworkClient="*res://NetworkClient.cs"
 ProgramEntryPoint="*res://ProgramEntryPoint.cs"
-MobileUIRadialMenu="*res://MobileUIRadialMenu.cs"
-MobileUICharSelect="*res://MobileUICharSelect.cs"
-MobileUILogin="*res://MobileUILogin.cs"
 
 [display]
 window/size/viewport_width=1280
