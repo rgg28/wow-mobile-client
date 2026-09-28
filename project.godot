@@ -1,3 +1,4 @@
+; Configuración base para el Cliente WoW 3.3.5a Android sin escenas
 config_version=5
 
 [application]
@@ -9,6 +10,7 @@ config/features=PackedStringArray("4.2", "C#", "Forward Plus")
 [autoload]
 NetworkClient="*res://NetworkClient.cs"
 ProgramEntryPoint="*res://ProgramEntryPoint.cs"
+MobileUIRadialMenu="*res://MobileUIRadialMenu.cs"
 
 [display]
 window/size/viewport_width=1280
