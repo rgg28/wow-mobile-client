@@ -7,9 +7,15 @@ public partial class MobileUILogin : Panel
     private LineEdit _inputContrasena = null!;
     private Action<string, string>? _onConectarCallback;
 
-    public void Inicializar(Action<string, string> onConectar)
+    // Método simple para inyectar el callback desde el ProgramEntryPoint antes de añadirlo a la pantalla
+    public void ConfigurarCallback(Action<string, string> onConectar)
     {
         _onConectarCallback = onConectar;
+    }
+
+    // El motor llama automáticamente a _Ready cuando el nodo se monta de forma real en la pantalla
+    public override void _Ready()
+    {
         Visible = true;
 
         // Centrado responsivo oficial de Godot 4 para evitar deformaciones en Android
@@ -40,7 +46,6 @@ public partial class MobileUILogin : Panel
             PlaceholderText = "Nombre de Cuenta...", 
             CustomMinimumSize = new Vector2(0, 45),
             FocusMode = FocusModeEnum.Click,
-            // Optimización para Android: Pone la primera letra en mayúscula automáticamente o desactiva sugerencias molestas
             VirtualKeyboardType = LineEdit.VirtualKeyboardTypeEnum.Default 
         };
         contenedorVertical.AddChild(_inputUsuario);
@@ -51,7 +56,7 @@ public partial class MobileUILogin : Panel
         // 3. Campo de Contraseña
         _inputContrasena = new LineEdit { 
             PlaceholderText = "Contraseña...", 
-            Secret = true, // Oculta los caracteres de la contraseña
+            Secret = true, 
             CustomMinimumSize = new Vector2(0, 45),
             FocusMode = FocusModeEnum.Click,
             VirtualKeyboardType = LineEdit.VirtualKeyboardTypeEnum.Password
@@ -66,7 +71,7 @@ public partial class MobileUILogin : Panel
         var btnConectar = new Button { 
             Text = "CONECTAR", 
             CustomMinimumSize = new Vector2(0, 55),
-            FocusMode = FocusModeEnum.None // Evita el recuadro de selección del sistema en Android
+            FocusMode = FocusModeEnum.None 
         };
         btnConectar.Pressed += AlPresionarConectar;
         contenedorVertical.AddChild(btnConectar);
