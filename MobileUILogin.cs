@@ -3,43 +3,84 @@ using System;
 
 public partial class MobileUILogin : Panel
 {
-    private LineEdit _inputUsuario;
-    private LineEdit _inputContrasena;
-    private Action<string, string> _onConectarCallback;
+    private LineEdit _inputUsuario = null!;
+    private LineEdit _inputContrasena = null!;
+    private Action<string, string>? _onConectarCallback;
 
     public void Inicializar(Action<string, string> onConectar)
     {
         _onConectarCallback = onConectar;
-        AnchorsPreset = 8; // Centrado total
-        OffsetLeft = -200; OffsetTop = -150;
-        OffsetRight = 200; OffsetBottom = 150;
+        Visible = true;
 
+        // Centrado responsivo oficial de Godot 4 para evitar deformaciones en Android
+        SetAnchorsAndOffsetsPreset(LayoutPreset.Center, LayoutPresetMode.Minsize);
+        CustomMinimumSize = new Vector2(400, 320);
+
+        // Usamos un VBoxContainer para alinear verticalmente y permitir escalado si el teclado empuja la UI
+        var contenedorVertical = new VBoxContainer
+        {
+            CustomMinimumSize = new Vector2(360, 280),
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            SizeFlagsVertical = SizeFlags.ExpandFill
+        };
+        contenedorVertical.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect, LayoutPresetMode.Minsize, margin: 20);
+        AddChild(contenedorVertical);
+
+        // 1. Título del juego
         var lblTitulo = new Label { 
             Text = "WORLD OF WARCRAFT 3.3.5a", 
-            Position = new Vector2(20, 20), 
-            HorizontalAlignment = HorizontalAlignment.Center, 
-            CustomMinimumSize = new Vector2(360, 30) 
+            HorizontalAlignment = HorizontalAlignment.Center,
+            CustomMinimumSize = new Vector2(0, 40),
+            SizeFlagsHorizontal = SizeFlags.ExpandFill
         };
-        AddChild(lblTitulo);
+        contenedorVertical.AddChild(lblTitulo);
 
-        _inputUsuario = new LineEdit { PlaceholderText = "Nombre de Cuenta...", Position = new Vector2(50, 70), CustomMinimumSize = new Vector2(300, 40) };
-        AddChild(_inputUsuario);
+        // 2. Campo de Usuario
+        _inputUsuario = new LineEdit { 
+            PlaceholderText = "Nombre de Cuenta...", 
+            CustomMinimumSize = new Vector2(0, 45),
+            FocusMode = FocusModeEnum.Click,
+            // Optimización para Android: Pone la primera letra en mayúscula automáticamente o desactiva sugerencias molestas
+            VirtualKeyboardType = LineEdit.VirtualKeyboardTypeEnum.Default 
+        };
+        contenedorVertical.AddChild(_inputUsuario);
 
-        _inputContrasena = new LineEdit { PlaceholderText = "Contraseña...", Secret = true, Position = new Vector2(50, 130), CustomMinimumSize = new Vector2(300, 40) };
-        AddChild(_inputContrasena);
+        // Pequeño espacio intermedio
+        contenedorVertical.AddChild(new Control { CustomMinimumSize = new Vector2(0, 10) });
 
-        var btnConectar = new Button { Text = "CONECTAR", Position = new Vector2(100, 200), CustomMinimumSize = new Vector2(200, 50) };
+        // 3. Campo de Contraseña
+        _inputContrasena = new LineEdit { 
+            PlaceholderText = "Contraseña...", 
+            Secret = true, // Oculta los caracteres de la contraseña
+            CustomMinimumSize = new Vector2(0, 45),
+            FocusMode = FocusModeEnum.Click,
+            VirtualKeyboardType = LineEdit.VirtualKeyboardTypeEnum.Password
+        };
+        contenedorVertical.AddChild(_inputContrasena);
+
+        // Espaciador flexible para empujar el botón hacia abajo de forma limpia
+        var espaciador = new Control { SizeFlagsVertical = SizeFlags.ExpandFill };
+        contenedorVertical.AddChild(espaciador);
+
+        // 4. Botón de Conectar
+        var btnConectar = new Button { 
+            Text = "CONECTAR", 
+            CustomMinimumSize = new Vector2(0, 55),
+            FocusMode = FocusModeEnum.None // Evita el recuadro de selección del sistema en Android
+        };
         btnConectar.Pressed += AlPresionarConectar;
-        AddChild(btnConectar);
+        contenedorVertical.AddChild(btnConectar);
     }
 
     private void AlPresionarConectar()
     {
         string user = _inputUsuario.Text.Trim();
         string pass = _inputContrasena.Text;
+
         if (!string.IsNullOrEmpty(user) && !string.IsNullOrEmpty(pass))
         {
             Visible = false;
+            GD.Print($"[UI] Procesando login para {user.ToUpper()}... Pasando datos al cliente de red.");
             _onConectarCallback?.Invoke(user, pass);
         }
     }
