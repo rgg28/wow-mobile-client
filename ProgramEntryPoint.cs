@@ -4,83 +4,101 @@ using System.IO;
 
 public partial class ProgramEntryPoint : Node
 {
-    private string _rutaDataWoW = "";
+    private string _rutaAssets = "";
 
     public override void _Ready()
     {
         GD.Print("[WoW] Inicializando cliente móvil 3.3.5a...");
 
-        // 1. Gestionar permisos nativos de almacenamiento en Android
+        // 1. Solicitar permisos de almacenamiento si estamos en Android
         if (OS.GetName() == "Android")
         {
-            // Solicita al usuario los permisos de lectura/escritura mediante el cuadro de diálogo oficial
             OS.RequestPermissions();
         }
 
-        // 2. Establecer la ruta en el almacenamiento interno compartido del dispositivo
-        // 'user://' apunta de forma segura a: /Android/data/com.wowandroid.client335/files/
-        string rutaBaseApp = ProjectSettings.GlobalizePath("user://");
-        _rutaDataWoW = Path.Combine(rutaBaseApp, "Data");
+        // 2. Construir la ruta exacta definida: Almacenamiento interno/Documents/WoW335Android/
+        // OS.GetSystemDir obtiene la ruta absoluta hacia 'Documents' de forma nativa en cada celular
+        string rutaDocuments = OS.GetSystemDir(OS.SystemDir.Documents);
+        _rutaAssets = Path.Combine(rutaDocuments, "WoW335Android");
 
-        GD.Print($"[WoW] Buscando directorio de datos del juego en: {_rutaDataWoW}");
+        GD.Print($"[WoW] Buscando los datos del cliente en: {_rutaAssets}");
 
-        // 3. Verificar si el usuario ya movió sus carpetas de WoW
-        if (Directory.Exists(_rutaDataWoW))
+        // 3. Validar si la carpeta existe
+        if (Directory.Exists(_rutaAssets))
         {
-            GD.Print("[WoW] ¡Directorio Data detectado! Cargando archivos de Blizzard...");
-            InicializarComponentesDelJuego();
+            GD.Print("[WoW] ¡Directorio WoW335Android detectado con éxito!");
+            VerificarCarpetasInternas();
         }
         else
         {
-            GD.PrintErr("[WoW] [ERROR] Directorio Data ausente.");
+            GD.PrintErr($"[WoW] [ERROR] No se encontró la carpeta en: {_rutaAssets}");
             
-            // Creamos automáticamente las carpetas para facilitarle la vida al usuario
+            // Intentamos crear la carpeta automáticamente para facilitarle el trabajo al usuario
             try
             {
-                Directory.CreateDirectory(_rutaDataWoW);
-                GD.Print($"[WoW] Se ha creado la estructura vacía en: {rutaBaseApp}");
+                Directory.CreateDirectory(_rutaAssets);
+                GD.Print($"[WoW] Se ha creado la carpeta vacía en: {_rutaAssets}");
             }
             catch (Exception e) 
             { 
-                GD.PrintErr($"[WoW] No se pudo crear la estructura de carpetas: {e.Message}"); 
+                GD.PrintErr($"[WoW] No se pudo crear el directorio: {e.Message}"); 
             }
 
-            MostrarMensajeDeFaltaDeArchivos();
+            MostrarMensajeErrorRuta();
         }
     }
 
-    private void InicializarComponentesDelJuego()
+    private void VerificarCarpetasInternas()
     {
-        // Aquí conectas tu parser de MPQ y generas tus interfaces
-        GD.Print("[WoW] Escaneando e indexando archivos .MPQ (common.mpq, expansion.mpq, patch.mpq)...");
-        
-        // EJEMPLO de comprobación de archivo crítico antes de procesar:
-        string commonMpqPath = Path.Combine(_rutaDataWoW, "common.mpq");
-        if (File.Exists(commonMpqPath))
+        // Validamos las carpetas que extrajiste de los MPQ dentro de tu ruta específica
+        string carpetaTexturas = Path.Combine(_rutaAssets, "Textures");
+        string carpetaWorld = Path.Combine(_rutaAssets, "World");
+
+        if (Directory.Exists(carpetaTexturas) && Directory.Exists(carpetaWorld))
         {
-            GD.Print("[WoW] common.mpq encontrado correctamente.");
-            // Tu código de inicio o instanciación de UI dinámica de C# aquí
+            GD.Print("[WoW] Carpetas 'Textures' y 'World' verificadas. Iniciando lectura binaria de assets...");
+            // Aquí irá la lógica de inicialización real de tu juego cuando todo esté en orden
+        }
+        else
+        {
+            GD.PrintErr("[WoW] [ERROR] Estructura interna incompleta dentro de WoW335Android.");
+            MostrarMensajeErrorEstructura();
         }
     }
 
-    private void MostrarMensajeDeFaltaDeArchivos()
+    private void MostrarMensajeErrorRuta()
     {
-        // Evita el crash dibujando un aviso en pantalla si el usuario olvidó pasar los datos
         CanvasLayer canvas = new CanvasLayer();
         Label label = new Label();
         
-        label.Text = "FALTAN LOS ASSETS DEL JUEGO\n\n" +
-                     "Por favor, conecta tu celular a la PC y copia el contenido\n" +
-                     "de tu carpeta 'Data' de WoW 3.3.5a dentro de la ruta:\n\n" +
-                     "Almacenamiento Interno -> Android -> data -> com.wowandroid.client335 -> files -> Data\n\n" +
+        label.Text = "FALTAN LOS ARCHIVOS DEL JUEGO\n\n" +
+                     "Por favor, copia tus assets extraídos en la memoria de tu móvil:\n\n" +
+                     "Almacenamiento interno ➡️ Documents ➡️ WoW335Android ➡️ (Aquí tus carpetas)\n\n" +
                      "Luego, reinicia la aplicación.";
                      
         label.HorizontalAlignment = HorizontalAlignment.Center;
         label.VerticalAlignment = VerticalAlignment.Center;
         label.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        label.AddThemeFontSizeOverride("font_size", 22);
         
-        // Ajuste básico de tamaño de fuente por código para que sea legible en móviles
-        label.AddThemeFontSizeOverride("font_size", 24);
+        canvas.AddChild(label);
+        AddChild(canvas);
+    }
+
+    private void MostrarMensajeErrorEstructura()
+    {
+        CanvasLayer canvas = new CanvasLayer();
+        Label label = new Label();
+        
+        label.Text = "ESTRUCTURA DE ASSETS INCORRECTA\n\n" +
+                     "Asegúrate de que dentro de 'WoW335Android' se encuentren\n" +
+                     "las carpetas extraídas directamente de los archivos MPQ\n" +
+                     "(por ejemplo, las carpetas 'Textures' y 'World').";
+                     
+        label.HorizontalAlignment = HorizontalAlignment.Center;
+        label.VerticalAlignment = VerticalAlignment.Center;
+        label.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        label.AddThemeFontSizeOverride("font_size", 22);
         
         canvas.AddChild(label);
         AddChild(canvas);
