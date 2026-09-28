@@ -25,7 +25,6 @@ jobs:
       with:
         dotnet-version: '8.0.x' 
 
-    # NUEVO PASO: Compila los scripts de C# y genera las DLLs del juego antes de que Godot inspeccione los Autoloads
     - name: Compilar Solución C# (Generar binarios del juego)
       run: dotnet build --configuration Release
 
@@ -56,16 +55,19 @@ jobs:
         # 2. Crear la carpeta de salida
         mkdir -p build/android
         
-        # 3. Exportar en release limpio (Godot generará el APK leyendo las DLLs creadas en el paso previo)
+        # 3. NUEVO PASO INTERNO: Sincronizar metadatos del proyecto y actualizar el árbol de Autoloads en Godot
+        ./Godot_v4.2.1-stable_mono_linux.x86_64 --headless --build-solutions --editor || true
+        
+        # 4. Exportar en release limpio (Godot generará el APK leyendo las DLLs creadas en el paso previo)
         ./Godot_v4.2.1-stable_mono_linux.x86_64 --headless --export-release "Android" build/android/wow_335_client.apk
         
-        # 4. Encontrar apksigner en el SDK de Android del runner y aplicar la firma obligatoria
+        # 5. Encontrar apksigner en el SDK de Android del runner y aplicar la firma obligatoria
         APKSIGNER_PATH=$(find $ANDROID_HOME/build-tools/ -name apksigner | head -n 1)
         echo "Firmando APK usando apksigner desde: $APKSIGNER_PATH"
         
         $APKSIGNER_PATH sign --ks release.keystore --ks-key-alias androidreleasekey --ks-pass pass:androidpassword --key-pass pass:androidpassword build/android/wow_335_client.apk
         
-        # 5. Verificar que la estructura de la firma quedó perfecta para Android
+        # 6. Verificar que la estructura de la firma quedó perfecta para Android
         $APKSIGNER_PATH verify build/android/wow_335_client.apk
 
     - name: Subir APK Generado como Artefacto
