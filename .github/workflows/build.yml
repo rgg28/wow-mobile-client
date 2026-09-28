@@ -14,18 +14,20 @@ jobs:
       with:
         lfs: true # Descarga los archivos reales de Godot y plantillas de Git LFS
 
-    # ACTUALIZADO: Cambiado a v5 para eliminar la anotación de advertencia de Java
     - name: Configurar Java 17 (Requerido por Android)
       uses: actions/setup-java@v5
       with:
         distribution: 'temurin'
         java-version: '17'
 
-    # ACTUALIZADO: Cambiado a v4 para usar un entorno compatible moderno
     - name: Configurar .NET SDK (Requerido por Godot Mono/C#)
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '8.0.x' 
+
+    # NUEVO PASO: Compila los scripts de C# y genera las DLLs del juego antes de que Godot inspeccione los Autoloads
+    - name: Compilar Solución C# (Generar binarios del juego)
+      run: dotnet build --configuration Release
 
     - name: Configurar Android SDK
       uses: android-actions/setup-android@v3
@@ -46,7 +48,6 @@ jobs:
         # 4. Mover los archivos de la plantilla a la ubicación oficial de Godot
         mv /tmp/godot_tmpl/templates/* ~/.local/share/godot/export_templates/4.2.1.stable.mono/
 
-    # CORREGIDO: Ahora el APK se exporta y luego se firma formalmente usando apksigner
     - name: Generar Firma Temporal y Exportar APK en Release
       run: |
         # 1. Crear la clave de firma formal (Cambiamos el alias para evitar conflictos de Debug)
@@ -55,7 +56,7 @@ jobs:
         # 2. Crear la carpeta de salida
         mkdir -p build/android
         
-        # 3. Exportar en release limpio (Godot genera el APK alineado pero sin firmar)
+        # 3. Exportar en release limpio (Godot generará el APK leyendo las DLLs creadas en el paso previo)
         ./Godot_v4.2.1-stable_mono_linux.x86_64 --headless --export-release "Android" build/android/wow_335_client.apk
         
         # 4. Encontrar apksigner en el SDK de Android del runner y aplicar la firma obligatoria
