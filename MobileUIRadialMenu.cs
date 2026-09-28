@@ -38,12 +38,11 @@ public partial class MobileUIRadialMenu : Control
     // Captura los eventos táctiles nativos de Android de forma automática
     public override void _Input(InputEvent @event)
     {
-        // 1. Detectar clic largo o pulsación en la pantalla para abrir el menú (Ejemplo con click derecho o toque largo simulado)
+        // 1. Detectar clic largo o pulsación en la pantalla para abrir el menú
         if (@event is InputEventScreenTouch touchEvent)
         {
             if (touchEvent.Pressed)
             {
-                // Aquí podrías poner una condición de pulsación larga. Por ahora abre en la posición del toque.
                 if (!Visible) 
                 {
                     Mostrar(touchEvent.Position);
@@ -60,7 +59,8 @@ public partial class MobileUIRadialMenu : Control
         // 2. Gestionar el arrastre del dedo por la pantalla
         if (@event is InputEventScreenDrag dragEvent && _activo)
         {
-            ActualizarArrastre(dragEvent.Position);
+            // Llama a la sobrecarga interna pasando el label local
+            ActualizarArrastre(dragEvent.Position, _labelStatus);
         }
     }
 
@@ -73,12 +73,16 @@ public partial class MobileUIRadialMenu : Control
         if (_labelStatus != null) _labelStatus.Text = "Selección: Ninguna";
     }
 
-    public int ActualizarArrastre(Vector2 posicionActual)
+    // Método corregido: Ahora acepta el Label externo enviado por MobileUI.cs para solucionar el error CS1501
+    public int ActualizarArrastre(Vector2 posicionActual, Label? labelEstadoExterno = null)
     {
+        // Si nos pasan un label desde fuera, usamos ese. Si no, usamos el interno de la clase.
+        Label? labelAObjetivo = labelEstadoExterno ?? _labelStatus;
+
         // Calculamos el vector relativo usando la posición global del menú
         Vector2 vector = posicionActual - GlobalPosition;
 
-        if (vector.Length() > 40f) // Incrementamos a 40f como zona muerta central para evitar selecciones accidentales
+        if (vector.Length() > 40f) // Zona muerta central para evitar selecciones accidentales
         {
             float angulo = Mathf.RadToDeg(vector.Angle());
             if (angulo < 0) angulo += 360f;
@@ -86,9 +90,9 @@ public partial class MobileUIRadialMenu : Control
             float tamanoSector = 360f / _opciones.Count;
             _seleccionadoIndex = Mathf.Clamp((int)(angulo / tamanoSector), 0, _opciones.Count - 1);
             
-            if (_labelStatus != null)
+            if (labelAObjetivo != null)
             {
-                _labelStatus.Text = $"Selección: {_opciones[_seleccionadoIndex]}";
+                labelAObjetivo.Text = $"Selección: {_opciones[_seleccionadoIndex]}";
             }
             return _seleccionadoIndex;
         }
@@ -113,7 +117,7 @@ public partial class MobileUIRadialMenu : Control
         string opcion = _opciones[index];
         GD.Print($"[UI] Ejecutando acción de interfaz de WoW para: {opcion}");
 
-        // Accedemos de forma segura al Autoload de Red que corregimos antes
+        // Accedemos de forma segura al Autoload de Red
         var netClient = GetNodeOrNull<NetworkClient>("/root/NetworkClient");
         if (netClient != null)
         {
