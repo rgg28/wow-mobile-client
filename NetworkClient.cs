@@ -21,11 +21,21 @@ public partial class NetworkClient : Node
 
     private void CargarRealmlist()
     {
-        string rutaBase = OS.GetName() == "Android" 
-            ? "/storage/emulated/0/Documents/WoW335Android/" 
-            : "./WoWAssets/";
-
+        // 'user://' es mapeado automáticamente por Godot a la carpeta de almacenamiento segura en Android y PC
+        string rutaBase = ProjectSettings.GlobalizePath("user://");
         string rutaRealmlist = Path.Combine(rutaBase, "realmlist.wtf");
+
+        // Si no existe, creamos uno por defecto para que el usuario pueda editarlo en su dispositivo
+        if (!File.Exists(rutaRealmlist))
+        {
+            try
+            {
+                Directory.CreateDirectory(rutaBase);
+                File.WriteAllText(rutaRealmlist, "set realmlist 127.0.0.1\n");
+                GD.Print($"[Red] Archivo realmlist.wtf creado por defecto en: {rutaRealmlist}");
+            }
+            catch (Exception e) { GD.PrintErr("No se pudo crear realmlist base: " + e.Message); }
+        }
 
         if (File.Exists(rutaRealmlist))
         {
@@ -34,16 +44,17 @@ public partial class NetworkClient : Node
                 string[] lineas = File.ReadAllLines(rutaRealmlist);
                 foreach (string linea in lineas)
                 {
-                    string limpia = linea.Trim().ToLower();
-                    if (limpia.StartsWith("set realmlist"))
+                    string limpia = linea.Trim();
+                    if (limpia.ToLower().StartsWith("set realmlist"))
                     {
-                        _authServer = linea.Replace("set realmlist", "", StringComparison.OrdinalIgnoreCase).Trim();
-                        GD.Print($"[Red] Realmlist cargado: {_authServer}");
+                        // Extraemos la IP o Dominio del servidor
+                        _authServer = limpia.Substring(13).Trim();
+                        GD.Print($"[Red] Realmlist cargado con éxito: {_authServer}");
                         break;
                     }
                 }
             }
-            catch (Exception e) { GD.PrintErr("Error realmlist: " + e.Message); }
+            catch (Exception e) { GD.PrintErr("Error al leer realmlist: " + e.Message); }
         }
     }
 
@@ -56,7 +67,6 @@ public partial class NetworkClient : Node
             _stream = _socket.GetStream();
             _running = true;
 
-            // Hilo secundario para escuchar opcodes entrantes del emulador
             _listenThread = new Thread(EscucharServidor);
             _listenThread.Start();
 
@@ -71,22 +81,26 @@ public partial class NetworkClient : Node
     private void EnviarLoginChallenge(string usuario, string contrasena)
     {
         if (_stream == null) return;
+
         byte[] userBytes = Encoding.UTF8.GetBytes(usuario);
+        
+        // Estructura mínima simplificada del paquete de Login para WoW 3.3.5a (WotLK)
         byte[] packet = new byte[4 + userBytes.Length];
         
         packet[0] = 0x00; // Opcode: AUTH_LOGON_CHALLENGE
-        packet[1] = 0x03; // Versión de WoW WotLK
-        packet[2] = 0x03; 
-        packet[3] = 0x05; // Build 12340
+        packet[1] = 0x03; // Error/Status placeholder 
+        packet[2] = (byte)(3 + userBytes.Length); // Tamaño del resto del paquete (indicador de longitud)
+        packet[3] = (byte)userBytes.Length;       // Longitud exacta de la cadena del usuario
 
         Array.Copy(userBytes, 0, packet, 4, userBytes.Length);
+        
         _stream.Write(packet, 0, packet.Length);
-        GD.Print("[Red] Handshake inicial enviado. Esperando respuesta del reino...");
+        GD.Print("[Red] Handshake inicial enviado al AuthServer WoW. Esperando respuesta binaria...");
     }
 
     private void EscucharServidor()
     {
-        byte[] buffer = new byte[1024];
+        byte[] buffer = new byte[2048]; // Incrementamos el tamaño para paquetes SRP6 grandes
         while (_running && _stream != null)
         {
             try
@@ -95,12 +109,26 @@ public partial class NetworkClient : Node
                 if (bytesRead > 0)
                 {
                     byte opcodeRespuesta = buffer[0];
-                    GD.Print($"[Red] Paquete binario recibido del emulador WoW. Opcode: {opcodeRespuesta}");
                     
-                    // Aquí procesas de forma nativa los Opcodes de respuesta del servidor (SRP6)
+                    // IMPORTANTE: Procesamos la respuesta de forma diferida en el hilo principal de Godot
+                    Callable.From(() => ProcesarOpcodeEnHiloPrincipal(opcodeRespuesta, buffer, bytesRead)).CallDeferred();
                 }
             }
-            catch { break; }
+            catch 
+            { 
+                break; 
+            }
+        }
+    }
+
+    private void ProcesarOpcodeEnHiloPrincipal(byte opcode, byte[] datos, int tamano)
+    {
+        GD.Print($"[Red] Paquete procesado de forma segura en el Main Thread. Opcode: {opcode} ({tamano} bytes)");
+        
+        if (opcode == 0x00) // AUTH_LOGON_CHALLENGE Respuesta del Servidor
+        {
+            // Aquí inicia el cálculo matemático de las claves SRP6 (Generar los valores de B, g, N, s, etc.)
+            GD.Print("[Red] Descomponiendo datos SRP6 del emulador para generar la clave de sesión...");
         }
     }
 
@@ -114,11 +142,18 @@ public partial class NetworkClient : Node
 
     public override void _Notification(int what)
     {
-        if (what == NotificationWMCloseRequest || what == NotificationCrash)
+        // En Godot 4.x se usan constantes enteras para las notificaciones de cierre
+        if (what == NotificationWMCloseRequest || what == 1006) // 1006 equivale al antiguo NotificationCrash
         {
             _running = false;
+            _stream?.Close();
             _socket?.Close();
-            _listenThread?.Abort();
+            
+            // Es más seguro dejar que el hilo muera de forma natural al cerrar el stream que forzar un Abort
+            if (_listenThread != null && _listenThread.IsAlive)
+            {
+                _listenThread.Join(500); 
+            }
         }
     }
 }
