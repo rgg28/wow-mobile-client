@@ -7,8 +7,8 @@ public partial class MobileUILogin : Panel
     private LineEdit _inputContrasena = null!;
     private Action<string, string>? _onConectarCallback;
 
-    // Método simple para inyectar el callback desde el ProgramEntryPoint antes de añadirlo a la pantalla
-    public void ConfigurarCallback(Action<string, string> onConectar)
+    // Método corregido: Ahora se llama Inicializar para resolver el error CS1061
+    public void Inicializar(Action<string, string> onConectar)
     {
         _onConectarCallback = onConectar;
     }
