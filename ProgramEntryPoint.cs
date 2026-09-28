@@ -17,7 +17,6 @@ public partial class ProgramEntryPoint : Node
         }
 
         // 2. Construir la ruta exacta definida: Almacenamiento interno/Documents/WoW335Android/
-        // OS.GetSystemDir obtiene la ruta absoluta hacia 'Documents' de forma nativa en cada celular
         string rutaDocuments = OS.GetSystemDir(OS.SystemDir.Documents);
         _rutaAssets = Path.Combine(rutaDocuments, "WoW335Android");
 
@@ -57,7 +56,13 @@ public partial class ProgramEntryPoint : Node
         if (Directory.Exists(carpetaTexturas) && Directory.Exists(carpetaWorld))
         {
             GD.Print("[WoW] Carpetas 'Textures' y 'World' verificadas. Iniciando lectura binaria de assets...");
-            // Aquí irá la lógica de inicialización real de tu juego cuando todo esté en orden
+            
+            // 🚀 Inicialización Dinámica del Juego sin Escenas:
+            // Al compilar de manera pura en C#, instanciamos nuestra interfaz de Login con 'new'
+            // y la colgamos directamente de la ventana raíz del motor para que se dibuje.
+            var root = GetTree().Root;
+            MobileUILogin pantallaLogin = new MobileUILogin();
+            root.AddChild(pantallaLogin);
         }
         else
         {
@@ -82,7 +87,9 @@ public partial class ProgramEntryPoint : Node
         label.AddThemeFontSizeOverride("font_size", 22);
         
         canvas.AddChild(label);
-        AddChild(canvas);
+        
+        // 🛠️ CORRECCIÓN: Forzamos el renderizado inyectando el Canvas directamente al Root de Godot
+        GetTree().Root.AddChild(canvas);
     }
 
     private void MostrarMensajeErrorEstructura()
@@ -101,6 +108,8 @@ public partial class ProgramEntryPoint : Node
         label.AddThemeFontSizeOverride("font_size", 22);
         
         canvas.AddChild(label);
-        AddChild(canvas);
+        
+        // 🛠️ CORRECCIÓN: Forzamos el renderizado inyectando el Canvas directamente al Root de Godot
+        GetTree().Root.AddChild(canvas);
     }
 }
