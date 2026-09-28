@@ -4,46 +4,59 @@ using System.Collections.Generic;
 
 public partial class MobileUICharSelect : Panel
 {
-    private ItemList _listaPersonajes;
-    private Button _btnEntrarMundo;
-    private Action<string> _onPersonajeElegidoCallback;
+    private ItemList _listaPersonajes = null!;
+    private Button _btnEntrarMundo = null!;
+    private Action<string>? _onPersonajeElegidoCallback;
     private List<string> _personajesCargados = new List<string>();
 
     public void Inicializar(Action<string> onPersonajeElegido)
     {
         _onPersonajeElegidoCallback = onPersonajeElegido;
-
-        // Configurar tamaño del panel central de selección (Lado derecho de la pantalla, estilo WoW)
-        AnchorsPreset = 6; // Derecha - Centro
-        OffsetLeft = -350; OffsetTop = -250;
-        OffsetRight = -50; OffsetBottom = 250;
         Visible = false;
+
+        // Formato correcto en Godot 4 para anclar a la Derecha-Centro de manera responsiva
+        SetAnchorsAndOffsetsPreset(LayoutPreset.CenterRight, LayoutPresetMode.Minsize, margin: 50);
+        CustomMinimumSize = new Vector2(300, 500);
+
+        // Usamos un VBoxContainer para alinear los elementos de forma automática y limpia en Android
+        var contenedorVertical = new VBoxContainer
+        {
+            CustomMinimumSize = new Vector2(260, 460),
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            SizeFlagsVertical = SizeFlags.ExpandFill
+        };
+        // Añadimos un pequeño margen interno (Padding)
+        contenedorVertical.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect, LayoutPresetMode.Minsize, margin: 20);
+        AddChild(contenedorVertical);
 
         var lblTitulo = new Label {
             Text = "SELECCIONA UN PERSONAJE",
-            Position = new Vector2(20, 20),
-            CustomMinimumSize = new Vector2(260, 30),
-            HorizontalAlignment = HorizontalAlignment.Center
+            HorizontalAlignment = HorizontalAlignment.Center,
+            CustomMinimumSize = new Vector2(0, 30)
         };
-        AddChild(lblTitulo);
+        contenedorVertical.AddChild(lblTitulo);
 
-        // Lista vertical para mostrar los personajes
+        // Lista vertical responsiva para mostrar los personajes
         _listaPersonajes = new ItemList {
-            Position = new Vector2(20, 60),
-            CustomMinimumSize = new Vector2(260, 300)
+            SizeFlagsVertical = SizeFlags.ExpandFill, // Hace que ocupe todo el espacio disponible
+            FocusMode = FocusModeEnum.None
         };
         _listaPersonajes.ItemSelected += OnPersonajeSeleccionado;
-        AddChild(_listaPersonajes);
+        contenedorVertical.AddChild(_listaPersonajes);
 
-        // Botón para confirmar e iniciar la Fase 2 (Entrar al mundo)
+        // Espaciador para separar la lista del botón inferior
+        var separador = new Control { CustomMinimumSize = new Vector2(0, 15) };
+        contenedorVertical.AddChild(separador);
+
+        // Botón para confirmar e iniciar el ingreso (Fase 2 - CMSG_PLAYER_LOGIN)
         _btnEntrarMundo = new Button {
             Text = "ENTRAR AL MUNDO",
-            Position = new Vector2(20, 380),
-            CustomMinimumSize = new Vector2(260, 50),
-            Disabled = true
+            CustomMinimumSize = new Vector2(0, 55),
+            Disabled = true,
+            FocusMode = FocusModeEnum.None
         };
         _btnEntrarMundo.Pressed += OnBtnEntrarMundoPressed;
-        AddChild(_btnEntrarMundo);
+        contenedorVertical.AddChild(_btnEntrarMundo);
     }
 
     public void MostrarPersonajes(List<string> listaNombres)
@@ -74,6 +87,7 @@ public partial class MobileUICharSelect : Panel
             string nombrePersonaje = _personajesCargados[index];
             
             Visible = false; // Ocultar esta pantalla
+            GD.Print($"[UI] Personaje elegido: {nombrePersonaje}. Enviando petición de login al mundo...");
             _onPersonajeElegidoCallback?.Invoke(nombrePersonaje);
         }
     }
