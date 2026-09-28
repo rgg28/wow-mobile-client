@@ -21,18 +21,18 @@ jobs:
     - name: Configurar Android SDK (Corregido)
       uses: android-actions/setup-android@v3
       with:
-        # Reemplazamos 'tools' (antiguo/roto) por los paquetes modernos requeridos por Godot
         packages: 'platform-tools build-tools;34.0.0 platforms;android-34'
 
-    - name: Instalar Godot y Plantillas de Exportación (Versión .NET)
+    - name: Instalar Godot y Plantillas de Exportación (Nombres Fijos)
       run: |
-        curl -LO https://github.com
-        unzip Godot_v4.2.1-stable_mono_linux_x86_64.zip
+        # Forzar un nombre de archivo fijo para evitar el error 23 de curl
+        curl -Lo godot.zip https://github.com
+        unzip godot.zip
         mv Godot_v4.2.1-stable_mono_linux_x86_64/Godot_v4.2.1-stable_mono_linux_x86_64.x86_64 godot
         
-        curl -LO https://github.com
+        curl -Lo templates.tpz https://github.com
         mkdir -p ~/.local/share/godot/export_templates/4.2.1.stable.mono
-        unzip Godot_v4.2.1-stable_mono_export_templates.tpz -d ~/.local/share/godot/export_templates/4.2.1.stable.mono
+        unzip templates.tpz -d ~/.local/share/godot/export_templates/4.2.1.stable.mono
 
     - name: Compilar y Exportar APK
       run: |
