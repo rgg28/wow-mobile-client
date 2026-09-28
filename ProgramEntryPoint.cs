@@ -32,7 +32,6 @@ public partial class ProgramEntryPoint : Node
         {
             GD.PrintErr($"[WoW] [ERROR] No se encontró la carpeta en: {_rutaAssets}");
             
-            // Intentamos crear la carpeta automáticamente para facilitarle el trabajo al usuario
             try
             {
                 Directory.CreateDirectory(_rutaAssets);
@@ -49,7 +48,6 @@ public partial class ProgramEntryPoint : Node
 
     private void VerificarCarpetasInternas()
     {
-        // Validamos las carpetas que extrajiste de los MPQ dentro de tu ruta específica
         string carpetaTexturas = Path.Combine(_rutaAssets, "Textures");
         string carpetaWorld = Path.Combine(_rutaAssets, "World");
 
@@ -57,11 +55,32 @@ public partial class ProgramEntryPoint : Node
         {
             GD.Print("[WoW] Carpetas 'Textures' y 'World' verificadas. Iniciando lectura binaria de assets...");
             
-            // 🚀 Inicialización Dinámica del Juego sin Escenas:
-            // Al compilar de manera pura en C#, instanciamos nuestra interfaz de Login con 'new'
-            // y la colgamos directamente de la ventana raíz del motor para que se dibuje.
+            // 🚀 INICIA LA SINCRONIZACIÓN VISUAL Y LÓGICA
             var root = GetTree().Root;
+
+            // 1. Instanciamos la pantalla de Login (C# puro, sin archivo .tscn)
             MobileUILogin pantallaLogin = new MobileUILogin();
+
+            // 2. Buscamos de forma segura el Autoload de Red que se ejecuta en el fondo
+            var netClient = GetNodeOrNull<NetworkClient>("/root/NetworkClient");
+
+            if (netClient != null)
+            {
+                // 3. Vinculamos el botón de la UI con la lógica de red usando una función Lambda
+                pantallaLogin.ConfigurarCallback((usuario, contrasena) => 
+                {
+                    GD.Print($"[WoW] Callback activado. Conectando al servidor para la cuenta: {usuario}");
+                    netClient.IniciarSesion(usuario, contrasena);
+                });
+                
+                GD.Print("[WoW] Interfaz de Login vinculada exitosamente al cliente de Red.");
+            }
+            else
+            {
+                GD.PrintErr("[WoW] [ERROR CRÍTICO] No se encontró el Autoload 'NetworkClient'. Revisa tu project.godot");
+            }
+
+            // 4. Añadimos la interfaz a la ventana principal para que se ejecute su _Ready() y se dibuje
             root.AddChild(pantallaLogin);
         }
         else
@@ -87,8 +106,6 @@ public partial class ProgramEntryPoint : Node
         label.AddThemeFontSizeOverride("font_size", 22);
         
         canvas.AddChild(label);
-        
-        // 🛠️ CORRECCIÓN: Forzamos el renderizado inyectando el Canvas directamente al Root de Godot
         GetTree().Root.AddChild(canvas);
     }
 
@@ -108,8 +125,6 @@ public partial class ProgramEntryPoint : Node
         label.AddThemeFontSizeOverride("font_size", 22);
         
         canvas.AddChild(label);
-        
-        // 🛠️ CORRECCIÓN: Forzamos el renderizado inyectando el Canvas directamente al Root de Godot
         GetTree().Root.AddChild(canvas);
     }
 }
