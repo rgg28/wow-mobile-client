@@ -66,8 +66,8 @@ public partial class ProgramEntryPoint : Node
 
             if (netClient != null)
             {
-                // 3. Vinculamos el botón de la UI con la lógica de red usando una función Lambda
-                pantallaLogin.ConfigurarCallback((usuario, contrasena) => 
+                // 3. Método corregido: Ahora llama a Inicializar para resolver el error de compilación
+                pantallaLogin.Inicializar((usuario, contrasena) => 
                 {
                     GD.Print($"[WoW] Callback activado. Conectando al servidor para la cuenta: {usuario}");
                     netClient.IniciarSesion(usuario, contrasena);
