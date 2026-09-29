@@ -4,74 +4,370 @@ on:
   push:
     branches: [ "main" ]
 
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wow-335-android-build
+  cancel-in-progress: true
+
 jobs:
   build-android:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+
+    # Nunca permitir que una compilación quede ejecutándose indefinidamente.
+    timeout-minutes: 30
 
     steps:
+
+    # ============================================================
+    # 1. CLONAR REPOSITORIO
+    # ============================================================
     - name: Clonar repositorio (Con soporte Git LFS)
       uses: actions/checkout@v4
       with:
-        lfs: true # Descarga los archivos reales de Godot y plantillas de Git LFS
+        lfs: true
+        fetch-depth: 1
 
-    - name: Configurar Java 17 (Requerido por Android)
+    # ============================================================
+    # 2. JAVA 17
+    # ============================================================
+    - name: Configurar Java 17
       uses: actions/setup-java@v5
       with:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Configurar .NET SDK (Requerido por Godot Mono/C#)
+    - name: Verificar Java
+      run: |
+        java -version
+        echo "JAVA_HOME=$JAVA_HOME"
+
+    # ============================================================
+    # 3. .NET 8
+    # ============================================================
+    - name: Configurar .NET SDK
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '8.0.x' 
+        dotnet-version: '8.0.x'
 
-    - name: Compilar Solución C# (Generar binarios del juego)
-      run: dotnet build --configuration Release
+    - name: Verificar .NET
+      run: |
+        dotnet --info
 
+    # ============================================================
+    # 4. ANDROID SDK
+    # ============================================================
     - name: Configurar Android SDK
       uses: android-actions/setup-android@v3
-      with:
-        packages: 'platform-tools build-tools;34.0.0 platforms;android-34'
 
-    - name: Configurar Godot y Plantillas de Exportación locales
+    - name: Instalar Android SDK 34
       run: |
-        # 1. Dar permisos de ejecución al binario de Godot que está en tu repositorio
+        yes | sdkmanager --licenses || true
+
+        sdkmanager \
+          "platform-tools" \
+          "platforms;android-34" \
+          "build-tools;34.0.0"
+
+        echo "ANDROID_HOME=$ANDROID_HOME"
+        echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+
+    # ============================================================
+    # 5. VERIFICAR ARCHIVOS GODOT
+    # ============================================================
+    - name: Verificar archivos Godot
+      run: |
+        echo "=== Archivos Godot ==="
+
+        ls -lh \
+          Godot_v4.2.1-stable_mono_linux.x86_64 \
+          Godot_v4.2.1-stable_mono_export_templates.tpz
+
+        echo ""
+        echo "=== Proyecto ==="
+
+        test -f project.godot || {
+          echo "ERROR: No existe project.godot"
+          exit 1
+        }
+
+        test -f "WoW Android Client.csproj" || {
+          echo "ERROR: No existe WoW Android Client.csproj"
+          exit 1
+        }
+
+        test -f NetworkClient.cs || {
+          echo "ERROR: No existe NetworkClient.cs"
+          exit 1
+        }
+
+        test -f ProgramEntryPoint.cs || {
+          echo "ERROR: No existe ProgramEntryPoint.cs"
+          exit 1
+        }
+
+        echo ""
+        echo "Todos los archivos principales existen."
+
+    # ============================================================
+    # 6. PREPARAR GODOT
+    # ============================================================
+    - name: Configurar Godot y Plantillas
+      run: |
         chmod +x ./Godot_v4.2.1-stable_mono_linux.x86_64
-        
-        # 2. Crear el directorio donde Godot busca internamente las plantillas
-        mkdir -p ~/.local/share/godot/export_templates/4.2.1.stable.mono
-        
-        # 3. Descomprimir el archivo .tpz de tu repositorio en una ruta temporal
-        unzip Godot_v4.2.1-stable_mono_export_templates.tpz -d /tmp/godot_tmpl
-        
-        # 4. Mover los archivos de la plantilla a la ubicación oficial de Godot
-        mv /tmp/godot_tmpl/templates/* ~/.local/share/godot/export_templates/4.2.1.stable.mono/
 
-    - name: Generar Firma Temporal y Exportar APK en Release
+        echo "=== Versión de Godot ==="
+
+        ./Godot_v4.2.1-stable_mono_linux.x86_64 --version
+
+        echo ""
+        echo "=== Instalar plantillas ==="
+
+        mkdir -p \
+          ~/.local/share/godot/export_templates/4.2.1.stable.mono
+
+        rm -rf /tmp/godot_tmpl
+        mkdir -p /tmp/godot_tmpl
+
+        unzip -q \
+          Godot_v4.2.1-stable_mono_export_templates.tpz \
+          -d /tmp/godot_tmpl
+
+        find /tmp/godot_tmpl -maxdepth 3 -type f -print
+
+        if [ ! -d "/tmp/godot_tmpl/templates" ]; then
+          echo "ERROR: El archivo de templates no contiene la carpeta templates."
+          exit 1
+        fi
+
+        cp -r \
+          /tmp/godot_tmpl/templates/. \
+          ~/.local/share/godot/export_templates/4.2.1.stable.mono/
+
+        echo ""
+        echo "=== Templates instaladas ==="
+
+        find \
+          ~/.local/share/godot/export_templates/4.2.1.stable.mono \
+          -maxdepth 1 \
+          -type f \
+          -printf '%f\n'
+
+    # ============================================================
+    # 7. RESTAURAR C#
+    # ============================================================
+    - name: Restaurar proyecto C#
       run: |
-        # 1. Crear la clave de firma formal (Cambiamos el alias para evitar conflictos de Debug)
-        keytool -keyalg RSA -genkeypair -alias androidreleasekey -keypass androidpassword -keystore release.keystore -storepass androidpassword -dname "CN=Android Build,O=Godot,C=US" -validity 20000
-        
-        # 2. Crear la carpeta de salida
-        mkdir -p build/android
-        
-        # 3. NUEVO PASO INTERNO: Sincronizar metadatos del proyecto y actualizar el árbol de Autoloads en Godot
-        ./Godot_v4.2.1-stable_mono_linux.x86_64 --headless --build-solutions --editor || true
-        
-        # 4. Exportar en release limpio (Godot generará el APK leyendo las DLLs creadas en el paso previo)
-        ./Godot_v4.2.1-stable_mono_linux.x86_64 --headless --export-release "Android" build/android/wow_335_client.apk
-        
-        # 5. Encontrar apksigner en el SDK de Android del runner y aplicar la firma obligatoria
-        APKSIGNER_PATH=$(find $ANDROID_HOME/build-tools/ -name apksigner | head -n 1)
-        echo "Firmando APK usando apksigner desde: $APKSIGNER_PATH"
-        
-        $APKSIGNER_PATH sign --ks release.keystore --ks-key-alias androidreleasekey --ks-pass pass:androidpassword --key-pass pass:androidpassword build/android/wow_335_client.apk
-        
-        # 6. Verificar que la estructura de la firma quedó perfecta para Android
-        $APKSIGNER_PATH verify build/android/wow_335_client.apk
+        dotnet restore "WoW Android Client.csproj" --verbosity normal
 
-    - name: Subir APK Generado como Artefacto
+    # ============================================================
+    # 8. COMPILAR C# DIRECTAMENTE
+    #
+    # NO ocultamos errores con || true.
+    # ============================================================
+    - name: Compilar proyecto C# Release
+      run: |
+        dotnet build \
+          "WoW Android Client.csproj" \
+          --configuration Release \
+          --no-restore \
+          --verbosity normal
+
+    # ============================================================
+    # 9. VERIFICAR DLL
+    # ============================================================
+    - name: Verificar binarios C#
+      run: |
+        echo "=== DLL generadas ==="
+
+        find . \
+          -type f \
+          -name "*.dll" \
+          -print
+
+    # ============================================================
+    # 10. ACTUALIZAR PROYECTO GODOT
+    #
+    # IMPORTANTE:
+    # Ya no usamos "|| true".
+    # Si Godot no puede cargar un Autoload,
+    # el workflow se detiene aquí mostrando el error real.
+    # ============================================================
+    - name: Preparar proyecto Godot C#
+      run: |
+        timeout 180 \
+          ./Godot_v4.2.1-stable_mono_linux.x86_64 \
+          --headless \
+          --editor \
+          --path "$GITHUB_WORKSPACE" \
+          --build-solutions \
+          --quit \
+          --verbose
+
+    # ============================================================
+    # 11. VALIDAR PROYECTO
+    # ============================================================
+    - name: Validar proyecto Godot
+      run: |
+        timeout 180 \
+          ./Godot_v4.2.1-stable_mono_linux.x86_64 \
+          --headless \
+          --editor \
+          --path "$GITHUB_WORKSPACE" \
+          --quit \
+          --verbose
+
+    # ============================================================
+    # 12. COMPROBAR PRESET ANDROID
+    # ============================================================
+    - name: Comprobar preset Android
+      run: |
+        test -f export_presets.cfg || {
+          echo "ERROR: Falta export_presets.cfg"
+          exit 1
+        }
+
+        echo "=== Presets de exportación ==="
+        cat export_presets.cfg
+
+        echo ""
+        echo "=== Presets Android detectados ==="
+
+        grep -n 'name="Android"' export_presets.cfg || {
+          echo "ADVERTENCIA: No se encontró exactamente un preset llamado Android."
+          echo "Los presets disponibles son:"
+          grep -n 'name=' export_presets.cfg || true
+        }
+
+    # ============================================================
+    # 13. CREAR KEYSTORE RELEASE
+    # ============================================================
+    - name: Generar Firma Release
+      run: |
+        keytool \
+          -keyalg RSA \
+          -genkeypair \
+          -alias androidreleasekey \
+          -keypass androidpassword \
+          -keystore release.keystore \
+          -storepass androidpassword \
+          -dname "CN=Android Build,O=Godot,C=US" \
+          -validity 20000 \
+          -noprompt
+
+        echo ""
+        echo "Keystore Release creado."
+
+        keytool \
+          -list \
+          -keystore release.keystore \
+          -storepass androidpassword
+
+    # ============================================================
+    # 14. CREAR CARPETA APK
+    # ============================================================
+    - name: Preparar salida
+      run: |
+        mkdir -p build/android
+
+    # ============================================================
+    # 15. EXPORTAR RELEASE
+    #
+    # Se mantiene el mismo comportamiento del workflow original.
+    # ============================================================
+    - name: Exportar APK Release
+      run: |
+        timeout 600 \
+          ./Godot_v4.2.1-stable_mono_linux.x86_64 \
+          --headless \
+          --path "$GITHUB_WORKSPACE" \
+          --verbose \
+          --export-release \
+          "Android" \
+          build/android/wow_335_client.apk
+
+    # ============================================================
+    # 16. COMPROBAR APK
+    # ============================================================
+    - name: Verificar APK antes de firmar
+      run: |
+        if [ ! -f build/android/wow_335_client.apk ]; then
+          echo "ERROR: Godot no creó el APK."
+
+          echo ""
+          echo "Contenido de build:"
+          find build -maxdepth 4 -type f -ls
+
+          exit 1
+        fi
+
+        echo "APK generado:"
+        ls -lh build/android/wow_335_client.apk
+
+        file build/android/wow_335_client.apk
+
+    # ============================================================
+    # 17. BUSCAR APKSIGNER
+    # ============================================================
+    - name: Localizar apksigner
+      run: |
+        APKSIGNER_PATH=$(find "$ANDROID_HOME/build-tools" \
+          -type f \
+          -name apksigner \
+          | sort -V \
+          | tail -n 1)
+
+        if [ -z "$APKSIGNER_PATH" ]; then
+          echo "ERROR: No se encontró apksigner."
+          find "$ANDROID_HOME/build-tools" -maxdepth 3 -type f | head -100
+          exit 1
+        fi
+
+        echo "APKSIGNER_PATH=$APKSIGNER_PATH" >> "$GITHUB_ENV"
+
+        echo "Usando:"
+        echo "$APKSIGNER_PATH"
+
+        "$APKSIGNER_PATH" --version
+
+    # ============================================================
+    # 18. FIRMAR APK RELEASE
+    # ============================================================
+    - name: Firmar APK Release
+      run: |
+        "$APKSIGNER_PATH" sign \
+          --ks release.keystore \
+          --ks-key-alias androidreleasekey \
+          --ks-pass pass:androidpassword \
+          --key-pass pass:androidpassword \
+          build/android/wow_335_client.apk
+
+    # ============================================================
+    # 19. VERIFICAR FIRMA
+    # ============================================================
+    - name: Verificar firma APK
+      run: |
+        "$APKSIGNER_PATH" verify \
+          --verbose \
+          build/android/wow_335_client.apk
+
+        echo ""
+        echo "=========================================="
+        echo " APK RELEASE FIRMADO CORRECTAMENTE"
+        echo "=========================================="
+
+        ls -lh build/android/wow_335_client.apk
+
+    # ============================================================
+    # 20. SUBIR APK
+    # ============================================================
+    - name: Subir APK Generado
       uses: actions/upload-artifact@v4
       with:
         name: WoW-Android-Client-3.3.5a
         path: build/android/wow_335_client.apk
+        if-no-files-found: error
+        retention-days: 7
