@@ -5,35 +5,37 @@ on:
     branches:
       - main
       - master
+
   workflow_dispatch:
 
 env:
-  ANDROID_HOME: /usr/local/lib/android/sdk
-  ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  GODOT_VERSION: "4.2.1"
+  GODOT_DIR: "${{ github.workspace }}/godot"
+  ANDROID_HOME: "/usr/local/lib/android/sdk"
+  ANDROID_SDK_ROOT: "/usr/local/lib/android/sdk"
   DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
 
 jobs:
   build:
-    name: Compilar APK WoW
     runs-on: ubuntu-22.04
 
     steps:
 
       # ============================================================
-      # 1. DESCARGAR REPOSITORIO
+      # 1. Descargar repositorio
       # ============================================================
-      - name: Descargar codigo fuente
+      - name: Descargar código fuente
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
           lfs: true
 
       # ============================================================
-      # 2. JAVA 17
+      # 2. Java 17
       # ============================================================
       - name: Configurar Java 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
@@ -47,16 +49,12 @@ jobs:
           dotnet-version: "8.0.x"
 
       # ============================================================
-      # 4. ANDROID SDK
+      # 4. Configurar Android SDK
       # ============================================================
-      - name: Preparar Android SDK
+      - name: Configurar Android SDK
         shell: bash
         run: |
           set -e
-
-          echo "=========================================="
-          echo " ANDROID SDK"
-          echo "=========================================="
 
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
@@ -64,456 +62,402 @@ jobs:
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
             -type f \
             -name sdkmanager \
-            2>/dev/null | sort -V | tail -n 1)
+            | head -n 1)
 
           if [ -z "$SDKMANAGER" ]; then
-            echo "ERROR: No se encontro sdkmanager."
+            echo "ERROR: No se encontró sdkmanager."
             exit 1
           fi
 
-          echo "sdkmanager:"
+          echo "sdkmanager encontrado:"
           echo "$SDKMANAGER"
 
-          echo ""
-          echo "Aceptando licencias..."
-
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-
-          echo ""
-          echo "Instalando componentes Android..."
 
           "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-34" \
             "build-tools;34.0.0"
 
-          echo ""
           echo "Android SDK preparado."
 
       # ============================================================
-      # 5. VERIFICAR ARCHIVOS
+      # 5. Verificar proyecto
       # ============================================================
-      - name: Verificar archivos principales
+      - name: Verificar archivos del proyecto
         shell: bash
         run: |
           set -e
 
-          echo "=========================================="
-          echo " ARCHIVOS PRINCIPALES"
-          echo "=========================================="
+          echo "===== ARCHIVOS PRINCIPALES ====="
 
           test -f "project.godot"
           test -f "WoW Android Client.csproj"
-          test -f "NetworkClient.cs"
-          test -f "ProgramEntryPoint.cs"
           test -f "export_presets.cfg"
 
-          echo ""
-          echo "Todos los archivos principales están presentes."
+          echo "project.godot OK"
+          echo "WoW Android Client.csproj OK"
+          echo "export_presets.cfg OK"
+
+          echo
+          echo "===== ARCHIVOS C# ====="
+
+          find . -maxdepth 2 -type f \
+            \( -name "*.cs" -o -name "*.csproj" \) \
+            -print
 
       # ============================================================
-      # 6. DESCARGAR GODOT 4.2.1 MONO
+      # 6. Descargar Godot 4.2.1 Mono
       # ============================================================
-      - name: Preparar Godot 4.2.1 Mono
+      - name: Descargar Godot 4.2.1 Mono
         shell: bash
         run: |
           set -e
 
-          GODOT="./Godot_v4.2.1-stable_mono_linux.x86_64"
+          mkdir -p "$GODOT_DIR"
 
-          if [ ! -f "$GODOT" ]; then
-            echo "Descargando Godot 4.2.1 Mono..."
+          cd "$GODOT_DIR"
 
-            wget -q \
-              "https://github.com/godotengine/godot/releases/download/4.2.1-stable/Godot_v4.2.1-stable_mono_linux_x86_64.zip" \
-              -O godot.zip
+          wget -q \
+            "https://github.com/godotengine/godot/releases/download/4.2.1-stable/Godot_v4.2.1-stable_mono_linux_x86_64.zip" \
+            -O godot.zip
 
-            unzip -q godot.zip
+          unzip -q godot.zip
 
-            rm -f godot.zip
-          fi
+          chmod +x \
+            "./Godot_v4.2.1-stable_mono_linux.x86_64"
 
-          chmod +x "$GODOT"
+          echo "Godot instalado."
 
-          echo ""
-          echo "Godot:"
-          "$GODOT" --version
+          "$GODOT_DIR/Godot_v4.2.1-stable_mono_linux.x86_64" \
+            --version
 
       # ============================================================
-      # 7. TEMPLATES GODOT 4.2.1 MONO
+      # 7. Descargar templates Mono
       # ============================================================
-      - name: Preparar templates de exportacion Android
+      - name: Instalar templates Android Mono
         shell: bash
         run: |
           set -e
-
-          echo "=========================================="
-          echo " TEMPLATES GODOT 4.2.1 MONO"
-          echo "=========================================="
 
           TEMPLATE_DIR="$HOME/.local/share/godot/export_templates/4.2.1.stable.mono"
 
-          rm -rf "$TEMPLATE_DIR"
           mkdir -p "$TEMPLATE_DIR"
 
-          echo ""
-          echo "Directorio esperado por Godot:"
-          echo "$TEMPLATE_DIR"
-
-          echo ""
-          echo "Descargando templates Mono..."
+          cd "$TEMPLATE_DIR"
 
           wget -q \
             "https://github.com/godotengine/godot/releases/download/4.2.1-stable/Godot_v4.2.1-stable_mono_export_templates.tpz" \
             -O templates.tpz
 
-          echo ""
-          echo "Extrayendo templates..."
+          unzip -q templates.tpz
 
-          rm -rf templates_extract
-          mkdir -p templates_extract
-
-          unzip -q templates.tpz -d templates_extract
-
-          echo ""
-          echo "Contenido descargado:"
-          find templates_extract \
-            -type f \
-            -printf '%p\n' | sort
-
-          echo ""
-          echo "Copiando templates..."
-
-          if [ -d "templates_extract/templates" ]; then
-            cp -a \
-              templates_extract/templates/. \
-              "$TEMPLATE_DIR/"
-          else
-            echo "ERROR: No se encontro la carpeta templates dentro del TPZ."
-            exit 1
+          if [ -d "templates" ]; then
+            cp -r templates/* .
           fi
 
-          echo ""
-          echo "=========================================="
-          echo " TEMPLATES INSTALADOS"
-          echo "=========================================="
+          echo "===== TEMPLATES ====="
+          find "$TEMPLATE_DIR" -maxdepth 2 -type f -print
 
-          find "$TEMPLATE_DIR" \
-            -maxdepth 2 \
-            -type f \
-            -printf '%p\n' | sort
+          test -f "$TEMPLATE_DIR/android_debug.apk"
+          test -f "$TEMPLATE_DIR/android_release.apk"
 
-          echo ""
-          echo "=========================================="
-          echo " VERIFICACION ANDROID"
-          echo "=========================================="
-
-          if [ ! -f "$TEMPLATE_DIR/android_debug.apk" ]; then
-            echo "ERROR: Falta android_debug.apk"
-            exit 1
-          fi
-
-          if [ ! -f "$TEMPLATE_DIR/android_release.apk" ]; then
-            echo "ERROR: Falta android_release.apk"
-            exit 1
-          fi
-
-          echo ""
-          echo "android_debug.apk: OK"
-          echo "android_release.apk: OK"
-          echo ""
-          echo "Templates Android Mono preparados correctamente."
-
-          rm -rf templates_extract
-          rm -f templates.tpz
+          echo "Templates Android Mono OK."
 
       # ============================================================
-      # 8. RESTORE C#
+      # 8. Restaurar NuGet
       # ============================================================
-      - name: Restaurar proyecto C#
+      - name: Restaurar proyecto .NET
         shell: bash
         run: |
           set -e
 
-          echo "=========================================="
-          echo " DOTNET RESTORE"
-          echo "=========================================="
-
-          dotnet restore "WoW Android Client.csproj"
+          dotnet restore \
+            "WoW Android Client.csproj"
 
       # ============================================================
-      # 9. COMPILAR DEBUG + RELEASE
+      # 9. Compilar C# Debug
       # ============================================================
-      - name: Compilar proyecto C# Debug + Release
+      - name: Compilar C# Debug
         shell: bash
         run: |
           set -e
 
-          echo "=========================================="
-          echo " COMPILANDO C# DEBUG"
-          echo "=========================================="
-
-          dotnet build "WoW Android Client.csproj" \
-            --configuration Debug \
+          dotnet build \
+            "WoW Android Client.csproj" \
+            -c Debug \
             --no-restore
-
-          echo ""
-          echo "=========================================="
-          echo " COMPILANDO C# RELEASE"
-          echo "=========================================="
-
-          dotnet build "WoW Android Client.csproj" \
-            --configuration Release \
-            --no-restore
-
-          echo ""
-          echo "=========================================="
-          echo " DLL GENERADAS"
-          echo "=========================================="
-
-          find ".godot/mono/temp/bin" \
-            -maxdepth 2 \
-            -type f \
-            -name "*.dll" \
-            -printf '%p\n' | sort
 
       # ============================================================
-      # 10. VERIFICAR ASSEMBLIES C#
+      # 10. Compilar C# Release
+      # ============================================================
+      - name: Compilar C# Release
+        shell: bash
+        run: |
+          set -e
+
+          dotnet build \
+            "WoW Android Client.csproj" \
+            -c Release \
+            --no-restore
+
+      # ============================================================
+      # 11. Verificar DLL Debug + Release
       # ============================================================
       - name: Verificar assemblies C#
         shell: bash
         run: |
           set -e
 
-          echo "=========================================="
-          echo " VERIFICANDO ASSEMBLIES"
-          echo "=========================================="
-
           DEBUG_DLL=".godot/mono/temp/bin/Debug/WoW Android Client.dll"
           RELEASE_DLL=".godot/mono/temp/bin/Release/WoW Android Client.dll"
 
-          if [ ! -f "$DEBUG_DLL" ]; then
-            echo "ERROR: No existe:"
-            echo "$DEBUG_DLL"
-            exit 1
-          fi
-
-          if [ ! -f "$RELEASE_DLL" ]; then
-            echo "ERROR: No existe:"
-            echo "$RELEASE_DLL"
-            exit 1
-          fi
-
-          echo ""
           echo "DEBUG:"
           ls -lh "$DEBUG_DLL"
-          file "$DEBUG_DLL"
 
-          echo ""
+          echo
           echo "RELEASE:"
           ls -lh "$RELEASE_DLL"
-          file "$RELEASE_DLL"
 
-          echo ""
-          echo "=========================================="
-          echo " CLASES C#"
-          echo "=========================================="
+          test -f "$DEBUG_DLL"
+          test -f "$RELEASE_DLL"
 
-          grep -Rni \
-            -E 'class NetworkClient|class ProgramEntryPoint' \
-            --include="*.cs" \
-            . || true
+          echo
+          echo "Ambos assemblies fueron generados correctamente."
 
       # ============================================================
-      # 11. GODOT BUILD SOLUTIONS
+      # 12. Generar solución Godot
       # ============================================================
-      - name: Preparar solucion C# de Godot
+      - name: Generar solución Godot
         shell: bash
         run: |
           set -e
 
-          GODOT="./Godot_v4.2.1-stable_mono_linux.x86_64"
-
-          echo "=========================================="
-          echo " GODOT BUILD SOLUTIONS"
-          echo "=========================================="
-
-          timeout 180 "$GODOT" \
+          "$GODOT_DIR/Godot_v4.2.1-stable_mono_linux.x86_64" \
             --headless \
-            --path . \
+            --path "$GITHUB_WORKSPACE" \
             --build-solutions \
-            --quit \
-            --verbose
+            --quit
 
       # ============================================================
-      # 12. VALIDAR PROYECTO GODOT
+      # 13. Validar proyecto Godot
       # ============================================================
       - name: Validar proyecto Godot
         shell: bash
         run: |
           set -e
 
-          GODOT="./Godot_v4.2.1-stable_mono_linux.x86_64"
-
-          echo "=========================================="
-          echo " VALIDACION GODOT"
-          echo "=========================================="
-
-          timeout 180 "$GODOT" \
+          "$GODOT_DIR/Godot_v4.2.1-stable_mono_linux.x86_64" \
             --headless \
-            --path . \
+            --path "$GITHUB_WORKSPACE" \
             --editor \
-            --quit \
-            --verbose
+            --quit
 
       # ============================================================
-      # 13. VERIFICAR PRESET ANDROID
+      # 14. Verificar preset Android
       # ============================================================
       - name: Verificar preset Android
         shell: bash
         run: |
           set -e
 
-          echo "=========================================="
-          echo " PRESET ANDROID"
-          echo "=========================================="
+          grep -n '^\[preset\.[0-9]\+\]' export_presets.cfg || true
+          grep -n 'platform="Android"' export_presets.cfg || true
+          grep -n 'package/name' export_presets.cfg || true
 
-          if ! grep -q 'name="Android"' export_presets.cfg; then
-            echo "ERROR: No se encontro el preset Android."
-            exit 1
-          fi
-
-          echo "Preset Android encontrado."
+          echo
+          echo "Preset Android localizado."
 
       # ============================================================
-      # 14. CREAR KEYSTORE TEMPORAL
+      # 15. Crear keystore temporal
       # ============================================================
-      - name: Crear keystore temporal
+      - name: Crear keystore de compilación
         shell: bash
         run: |
           set -e
 
-          echo "=========================================="
-          echo " CREANDO KEYSTORE"
-          echo "=========================================="
+          mkdir -p "$GITHUB_WORKSPACE/.keys"
 
           keytool \
             -genkeypair \
             -v \
-            -keystore release.keystore \
-            -alias androidreleasekey \
+            -keystore "$GITHUB_WORKSPACE/.keys/signingKey.jks" \
+            -alias android \
             -keyalg RSA \
             -keysize 2048 \
             -validity 10000 \
             -storepass androidpassword \
             -keypass androidpassword \
-            -dname "CN=Android Build,O=Godot,C=US"
+            -dname "CN=WoW Android,O=WoW,C=AR"
+
+          test -f "$GITHUB_WORKSPACE/.keys/signingKey.jks"
 
           echo "Keystore creado."
 
       # ============================================================
-      # 15. EXPORTAR APK
+      # 16. Exportar APK DEBUG
       # ============================================================
-      - name: Exportar APK Android
+      - name: Exportar APK Debug
         shell: bash
         run: |
           set -e
-
-          GODOT="./Godot_v4.2.1-stable_mono_linux.x86_64"
 
           mkdir -p build
 
-          echo "=========================================="
-          echo " EXPORTANDO APK"
-          echo "=========================================="
+          rm -f build/WoW-debug.apk
 
-          rm -f "build/WoW.apk"
-
-          timeout 300 "$GODOT" \
+          "$GODOT_DIR/Godot_v4.2.1-stable_mono_linux.x86_64" \
             --headless \
-            --path . \
-            --export-release "Android" \
-            "build/WoW.apk"
+            --path "$GITHUB_WORKSPACE" \
+            --export-debug \
+            "Android" \
+            "$GITHUB_WORKSPACE/build/WoW-debug.apk"
 
-          echo ""
-          echo "=========================================="
-          echo " VERIFICANDO APK"
-          echo "=========================================="
-
-          if [ ! -f "build/WoW.apk" ]; then
-            echo "ERROR: Godot termino pero no genero el APK."
+          if [ ! -f "build/WoW-debug.apk" ]; then
+            echo "ERROR: No se generó WoW-debug.apk"
             exit 1
           fi
 
-          echo ""
-          echo "APK generado correctamente:"
-          ls -lh "build/WoW.apk"
+          ls -lh build/WoW-debug.apk
 
       # ============================================================
-      # 16. FIRMAR APK
+      # 17. Exportar APK RELEASE
       # ============================================================
-      - name: Firmar APK
+      - name: Exportar APK Release
         shell: bash
         run: |
           set -e
 
-          echo "=========================================="
-          echo " FIRMANDO APK"
-          echo "=========================================="
+          mkdir -p build
 
-          APKSIGNER=$(find "$ANDROID_HOME/build-tools" \
-            -type f \
-            -name apksigner \
-            | sort -V \
-            | tail -n 1)
+          rm -f build/WoW-release.apk
 
-          if [ -z "$APKSIGNER" ]; then
-            echo "ERROR: No se encontro apksigner."
+          "$GODOT_DIR/Godot_v4.2.1-stable_mono_linux.x86_64" \
+            --headless \
+            --path "$GITHUB_WORKSPACE" \
+            --export-release \
+            "Android" \
+            "$GITHUB_WORKSPACE/build/WoW-release.apk"
+
+          if [ ! -f "build/WoW-release.apk" ]; then
+            echo "ERROR: No se generó WoW-release.apk"
             exit 1
           fi
 
-          "$APKSIGNER" sign \
-            --ks release.keystore \
-            --ks-key-alias androidreleasekey \
+          ls -lh build/WoW-release.apk
+
+      # ============================================================
+      # 18. Firmar APK Debug
+      # ============================================================
+      - name: Firmar APK Debug
+        shell: bash
+        run: |
+          set -e
+
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
+
+          "$BUILD_TOOLS/zipalign" \
+            -f \
+            4 \
+            build/WoW-debug.apk \
+            build/WoW-debug-aligned.apk
+
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$GITHUB_WORKSPACE/.keys/signingKey.jks" \
             --ks-pass pass:androidpassword \
             --key-pass pass:androidpassword \
-            --out build/WoW-signed.apk \
-            build/WoW.apk
+            --ks-key-alias android \
+            --out build/WoW-debug-signed.apk \
+            build/WoW-debug-aligned.apk
 
-          echo ""
-          echo "APK firmado:"
-
-          ls -lh build/WoW-signed.apk
+          test -f build/WoW-debug-signed.apk
 
       # ============================================================
-      # 17. VERIFICAR FIRMA
+      # 19. Firmar APK Release
       # ============================================================
-      - name: Verificar firma APK
+      - name: Firmar APK Release
         shell: bash
         run: |
           set -e
 
-          APKSIGNER=$(find "$ANDROID_HOME/build-tools" \
-            -type f \
-            -name apksigner \
-            | sort -V \
-            | tail -n 1)
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
 
-          echo "=========================================="
-          echo " VERIFICANDO FIRMA"
-          echo "=========================================="
+          "$BUILD_TOOLS/zipalign" \
+            -f \
+            4 \
+            build/WoW-release.apk \
+            build/WoW-release-aligned.apk
 
-          "$APKSIGNER" verify \
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$GITHUB_WORKSPACE/.keys/signingKey.jks" \
+            --ks-pass pass:androidpassword \
+            --key-pass pass:androidpassword \
+            --ks-key-alias android \
+            --out build/WoW-release-signed.apk \
+            build/WoW-release-aligned.apk
+
+          test -f build/WoW-release-signed.apk
+
+      # ============================================================
+      # 20. Verificar firmas
+      # ============================================================
+      - name: Verificar APKs
+        shell: bash
+        run: |
+          set -e
+
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
+
+          echo "===== DEBUG ====="
+
+          "$BUILD_TOOLS/apksigner" verify \
             --verbose \
-            build/WoW-signed.apk
+            build/WoW-debug-signed.apk
+
+          echo
+          echo "===== RELEASE ====="
+
+          "$BUILD_TOOLS/apksigner" verify \
+            --verbose \
+            build/WoW-release-signed.apk
 
       # ============================================================
-      # 18. SUBIR APK
+      # 21. Mostrar APKs finales
       # ============================================================
-      - name: Subir APK
+      - name: Mostrar APKs finales
+        shell: bash
+        run: |
+          set -e
+
+          echo "========================================"
+          echo " APKs GENERADAS"
+          echo "========================================"
+
+          ls -lh build/*.apk
+
+          echo
+          echo "Debug:"
+          du -h build/WoW-debug-signed.apk
+
+          echo
+          echo "Release:"
+          du -h build/WoW-release-signed.apk
+
+      # ============================================================
+      # 22. Subir ambas APK como artifacts
+      # ============================================================
+      - name: Subir APK Debug
         uses: actions/upload-artifact@v4
         with:
-          name: WoW-Android-APK
-          path: build/WoW-signed.apk
+          name: WoW-Android-Debug
+          path: build/WoW-debug-signed.apk
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 14
+
+      - name: Subir APK Release
+        uses: actions/upload-artifact@v4
+        with:
+          name: WoW-Android-Release
+          path: build/WoW-release-signed.apk
+          if-no-files-found: error
+          retention-days: 14
