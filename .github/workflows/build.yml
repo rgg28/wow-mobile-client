@@ -54,7 +54,7 @@ jobs:
 
 
       # ============================================================
-      # 4. LOCALIZAR Y PREPARAR ANDROID SDK
+      # 4. PREPARAR ANDROID SDK
       # ============================================================
 
       - name: Preparar Android SDK
@@ -69,56 +69,40 @@ jobs:
           echo " ANDROID SDK"
           echo "=========================================="
 
+          echo
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
 
           echo
           echo "Contenido del Android SDK:"
 
-          ls -la "$ANDROID_HOME" || true
+          ls -la "$ANDROID_HOME"
 
           echo
           echo "Buscando sdkmanager..."
 
-          find "$ANDROID_HOME" \
-            -type f \
-            -name "sdkmanager" \
-            -print 2>/dev/null || true
-
           SDKMANAGER=""
 
-          if [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+          if [ -f "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
             SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
 
-          elif [ -x "$ANDROID_HOME/cmdline-tools/bin/sdkmanager" ]; then
+          elif [ -f "$ANDROID_HOME/cmdline-tools/bin/sdkmanager" ]; then
             SDKMANAGER="$ANDROID_HOME/cmdline-tools/bin/sdkmanager"
 
-          elif [ -x "$ANDROID_HOME/tools/bin/sdkmanager" ]; then
+          elif [ -f "$ANDROID_HOME/tools/bin/sdkmanager" ]; then
             SDKMANAGER="$ANDROID_HOME/tools/bin/sdkmanager"
 
           else
-            FOUND_SDKMANAGER="$(find "$ANDROID_HOME" \
+            SDKMANAGER="$(find "$ANDROID_HOME" \
               -type f \
               -name "sdkmanager" \
-              -perm -111 \
               -print \
               -quit 2>/dev/null || true)"
-
-            if [ -n "$FOUND_SDKMANAGER" ]; then
-              SDKMANAGER="$FOUND_SDKMANAGER"
-            fi
           fi
 
           if [ -z "$SDKMANAGER" ]; then
             echo
             echo "ERROR: No se encontro sdkmanager."
-            echo
-            echo "Contenido disponible:"
-            find "$ANDROID_HOME" \
-              -maxdepth 5 \
-              -type f \
-              -print | head -300
-
             exit 1
           fi
 
@@ -126,12 +110,10 @@ jobs:
           echo "sdkmanager encontrado:"
           echo "$SDKMANAGER"
 
-          chmod +x "$SDKMANAGER"
-
           SDKMANAGER_DIR="$(dirname "$SDKMANAGER")"
 
           echo
-          echo "Agregando herramientas al PATH..."
+          echo "Agregando sdkmanager al PATH..."
 
           echo "$SDKMANAGER_DIR" >> "$GITHUB_PATH"
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
@@ -145,7 +127,7 @@ jobs:
           "$SDKMANAGER" --version
 
           echo
-          echo "Aceptando licencias Android..."
+          echo "Aceptando licencias..."
 
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
@@ -159,34 +141,37 @@ jobs:
 
           echo
           echo "=========================================="
-          echo " ANDROID SDK PREPARADO"
+          echo " VERIFICANDO ANDROID SDK"
           echo "=========================================="
 
           echo
-          echo "Verificando platform-tools..."
+          echo "Platform Tools:"
 
           test -f "$ANDROID_HOME/platform-tools/adb"
 
-          echo "platform-tools OK."
+          echo "OK"
 
           echo
-          echo "Verificando Android 34..."
+          echo "Android Platform 34:"
 
           test -d "$ANDROID_HOME/platforms/android-34"
 
-          echo "Android platform 34 OK."
+          echo "OK"
 
           echo
-          echo "Verificando Build Tools 34.0.0..."
+          echo "Build Tools 34.0.0:"
 
           test -f "$ANDROID_HOME/build-tools/34.0.0/apksigner"
           test -f "$ANDROID_HOME/build-tools/34.0.0/zipalign"
 
-          echo "Build Tools 34.0.0 OK."
+          echo "OK"
+
+          echo
+          echo "Android SDK preparado correctamente."
 
 
       # ============================================================
-      # 5. VERIFICAR GODOT MONO INCLUIDO
+      # 5. VERIFICAR GODOT MONO
       # ============================================================
 
       - name: Verificar Godot Mono
@@ -203,35 +188,38 @@ jobs:
           echo "=========================================="
 
           echo
-          echo "Buscando ejecutable Godot..."
+          echo "Verificando ejecutable Godot..."
 
           test -f "$GODOT"
-
-          chmod +x "$GODOT"
 
           echo "Godot encontrado."
 
           echo
-          echo "Buscando templates..."
+          echo "Verificando templates..."
 
           test -f "$TEMPLATES"
 
           echo "Templates encontrados."
 
           echo
-          echo "Buscando GodotSharp..."
+          echo "Verificando GodotSharp..."
 
           test -d "$GODOTSHARP"
 
           echo "GodotSharp encontrado."
 
           echo
-          echo "Version de Godot:"
+          echo "Permiso del ejecutable Godot..."
+
+          chmod +x "$GODOT"
+
+          echo
+          echo "Version Godot:"
 
           "$GODOT" --version
 
           echo
-          echo "Archivos Godot:"
+          echo "Archivos:"
 
           ls -lh "$GODOT"
           ls -lh "$TEMPLATES"
@@ -249,18 +237,18 @@ jobs:
           GODOT_TEMPLATES="$HOME/.local/share/godot/export_templates/4.2.1.stable.mono"
 
           echo "=========================================="
-          echo " INSTALANDO TEMPLATES MONO"
+          echo " TEMPLATES MONO"
           echo "=========================================="
 
           echo
-          echo "Limpiando templates anteriores..."
+          echo "Limpiando directorio anterior..."
 
           rm -rf "$GODOT_TEMPLATES"
 
           mkdir -p "$GODOT_TEMPLATES"
 
           echo
-          echo "Extrayendo archivo TPZ..."
+          echo "Extrayendo templates..."
 
           unzip -q \
             "./Godot_v4.2.1-stable_mono_export_templates.tpz" \
@@ -274,32 +262,14 @@ jobs:
             -type f \
             -print
 
-          # --------------------------------------------------------
-          # El TPZ normalmente contiene:
-          #
-          # templates/
-          #   android_debug.apk
-          #   android_release.apk
-          #
-          # Godot espera los archivos directamente en:
-          #
-          # 4.2.1.stable.mono/
-          #
-          # Copiamos SOLO el contenido.
-          # --------------------------------------------------------
-
           if [ -d "$GODOT_TEMPLATES/templates" ]; then
 
             echo
-            echo "Encontrada carpeta templates/."
-
-            echo "Copiando contenido al directorio principal..."
+            echo "Moviendo contenido de templates/..."
 
             cp -a \
               "$GODOT_TEMPLATES/templates/." \
               "$GODOT_TEMPLATES/"
-
-            echo "Eliminando carpeta temporal templates/..."
 
             rm -rf "$GODOT_TEMPLATES/templates"
 
@@ -313,47 +283,17 @@ jobs:
             -type f \
             -print
 
-          # --------------------------------------------------------
-          # VERIFICAR ANDROID DEBUG
-          # --------------------------------------------------------
-
           echo
           echo "Verificando Android Debug..."
 
-          if [ ! -f "$GODOT_TEMPLATES/android_debug.apk" ]; then
-            echo "ERROR: Falta android_debug.apk"
-
-            echo
-            echo "Contenido disponible:"
-
-            find "$GODOT_TEMPLATES" \
-              -type f \
-              -print
-
-            exit 1
-          fi
+          test -f "$GODOT_TEMPLATES/android_debug.apk"
 
           echo "Android Debug OK."
-
-          # --------------------------------------------------------
-          # VERIFICAR ANDROID RELEASE
-          # --------------------------------------------------------
 
           echo
           echo "Verificando Android Release..."
 
-          if [ ! -f "$GODOT_TEMPLATES/android_release.apk" ]; then
-            echo "ERROR: Falta android_release.apk"
-
-            echo
-            echo "Contenido disponible:"
-
-            find "$GODOT_TEMPLATES" \
-              -type f \
-              -print
-
-            exit 1
-          fi
+          test -f "$GODOT_TEMPLATES/android_release.apk"
 
           echo "Android Release OK."
 
@@ -362,12 +302,7 @@ jobs:
           echo " TEMPLATES ANDROID MONO OK"
           echo "=========================================="
 
-          echo
-          echo "Debug template:"
           ls -lh "$GODOT_TEMPLATES/android_debug.apk"
-
-          echo
-          echo "Release template:"
           ls -lh "$GODOT_TEMPLATES/android_release.apk"
 
 
@@ -381,51 +316,30 @@ jobs:
           set -e
 
           echo "=========================================="
-          echo " PROYECTO"
+          echo " PROYECTO GODOT"
           echo "=========================================="
 
-          echo
-          echo "Directorio actual:"
+          test -f "project.godot"
+          test -f "export_presets.cfg"
+          test -f "WoW Android Client.csproj"
 
-          pwd
+          echo
+          echo "project.godot OK"
+          echo "export_presets.cfg OK"
+          echo "WoW Android Client.csproj OK"
 
           echo
-          echo "Archivos principales:"
+          echo "Archivos C#:"
 
           find . \
             -maxdepth 3 \
             -type f \
-            \( \
-              -name "project.godot" \
-              -o -name "export_presets.cfg" \
-              -o -name "*.csproj" \
-            \) \
+            -name "*.cs" \
             -print | sort
-
-          echo
-          echo "Verificando project.godot..."
-
-          test -f "project.godot"
-
-          echo "project.godot OK."
-
-          echo
-          echo "Verificando export_presets.cfg..."
-
-          test -f "export_presets.cfg"
-
-          echo "export_presets.cfg OK."
-
-          echo
-          echo "Verificando proyecto C#..."
-
-          test -f "WoW Android Client.csproj"
-
-          echo "WoW Android Client.csproj OK."
 
 
       # ============================================================
-      # 8. RESTORE C#
+      # 8. RESTORE
       # ============================================================
 
       - name: Restaurar proyecto C#
@@ -447,16 +361,13 @@ jobs:
           set -e
 
           echo "=========================================="
-          echo " C# DEBUG"
+          echo " BUILD DEBUG"
           echo "=========================================="
 
           dotnet build \
             "WoW Android Client.csproj" \
             -c Debug \
             --no-restore
-
-          echo
-          echo "Compilacion Debug completada."
 
 
       # ============================================================
@@ -469,7 +380,7 @@ jobs:
           set -e
 
           echo "=========================================="
-          echo " C# RELEASE"
+          echo " BUILD RELEASE"
           echo "=========================================="
 
           dotnet build \
@@ -477,12 +388,9 @@ jobs:
             -c Release \
             --no-restore
 
-          echo
-          echo "Compilacion Release completada."
-
 
       # ============================================================
-      # 11. VERIFICAR DLL DEBUG + RELEASE
+      # 11. VERIFICAR DLL
       # ============================================================
 
       - name: Verificar assemblies C#
@@ -493,19 +401,14 @@ jobs:
           DEBUG_DLL=".godot/mono/temp/bin/Debug/WoW Android Client.dll"
           RELEASE_DLL=".godot/mono/temp/bin/Release/WoW Android Client.dll"
 
-          echo "=========================================="
-          echo " VERIFICANDO DLL"
-          echo "=========================================="
-
-          echo
-          echo "Debug:"
+          echo "Verificando Debug..."
 
           test -f "$DEBUG_DLL"
 
           ls -lh "$DEBUG_DLL"
 
           echo
-          echo "Release:"
+          echo "Verificando Release..."
 
           test -f "$RELEASE_DLL"
 
@@ -516,7 +419,7 @@ jobs:
 
 
       # ============================================================
-      # 12. GENERAR SOLUTION GODOT
+      # 12. GENERAR SOLUTION
       # ============================================================
 
       - name: Generar solution Godot
@@ -534,7 +437,7 @@ jobs:
 
 
       # ============================================================
-      # 13. VALIDAR PROYECTO GODOT
+      # 13. VALIDAR GODOT
       # ============================================================
 
       - name: Validar proyecto Godot
@@ -559,20 +462,10 @@ jobs:
         run: |
           set -e
 
-          echo "=========================================="
-          echo " PRESET ANDROID"
-          echo "=========================================="
+          echo "Buscando preset Android..."
 
-          if ! grep -q 'name="Android"' export_presets.cfg; then
-            echo
-            echo "ERROR: No se encontro el preset Android."
-            echo
-            echo "Contenido de export_presets.cfg:"
-            cat export_presets.cfg
-            exit 1
-          fi
+          grep -q 'name="Android"' export_presets.cfg
 
-          echo
           echo "Preset Android encontrado."
 
 
@@ -584,10 +477,6 @@ jobs:
         shell: bash
         run: |
           set -e
-
-          echo "=========================================="
-          echo " KEYSTORE"
-          echo "=========================================="
 
           mkdir -p .keys
 
@@ -603,8 +492,10 @@ jobs:
             -keypass androidpassword \
             -dname "CN=WoW Android, OU=Mobile, O=WoW, L=Argentina, ST=Tucuman, C=AR"
 
+          test -f ".keys/signingKey.jks"
+
           echo
-          echo "Keystore creado:"
+          echo "Keystore creado correctamente."
 
           ls -lh ".keys/signingKey.jks"
 
@@ -619,14 +510,13 @@ jobs:
           set -e
 
           rm -rf build
-
           mkdir -p build
 
           echo "Directorio build preparado."
 
 
       # ============================================================
-      # 17. EXPORT DEBUG APK
+      # 17. EXPORT DEBUG
       # ============================================================
 
       - name: Exportar APK Debug
@@ -635,7 +525,7 @@ jobs:
           set -e
 
           echo "=========================================="
-          echo " EXPORT DEBUG"
+          echo " EXPORT DEBUG APK"
           echo "=========================================="
 
           ./Godot_v4.2.1-stable_mono_linux.x86_64 \
@@ -645,16 +535,16 @@ jobs:
             "Android" \
             "build/WoW-debug.apk"
 
-          echo
-          echo "Verificando APK Debug..."
-
           test -f "build/WoW-debug.apk"
+
+          echo
+          echo "APK Debug generado:"
 
           ls -lh "build/WoW-debug.apk"
 
 
       # ============================================================
-      # 18. EXPORT RELEASE APK
+      # 18. EXPORT RELEASE
       # ============================================================
 
       - name: Exportar APK Release
@@ -663,7 +553,7 @@ jobs:
           set -e
 
           echo "=========================================="
-          echo " EXPORT RELEASE"
+          echo " EXPORT RELEASE APK"
           echo "=========================================="
 
           ./Godot_v4.2.1-stable_mono_linux.x86_64 \
@@ -673,10 +563,10 @@ jobs:
             "Android" \
             "build/WoW-release.apk"
 
-          echo
-          echo "Verificando APK Release..."
-
           test -f "build/WoW-release.apk"
+
+          echo
+          echo "APK Release generado:"
 
           ls -lh "build/WoW-release.apk"
 
@@ -692,24 +582,16 @@ jobs:
 
           BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
 
-          echo "=========================================="
-          echo " BUILD TOOLS"
-          echo "=========================================="
-
-          test -f "$BUILD_TOOLS/zipalign"
           test -f "$BUILD_TOOLS/apksigner"
+          test -f "$BUILD_TOOLS/zipalign"
 
-          chmod +x \
-            "$BUILD_TOOLS/zipalign" \
-            "$BUILD_TOOLS/apksigner"
+          echo "apksigner encontrado."
+          echo "zipalign encontrado."
 
           echo
-          echo "apksigner:"
+          echo "Version apksigner:"
 
           "$BUILD_TOOLS/apksigner" version
-
-          echo
-          echo "zipalign encontrado."
 
 
       # ============================================================
@@ -730,8 +612,6 @@ jobs:
             "build/WoW-debug-aligned.apk"
 
           test -f "build/WoW-debug-aligned.apk"
-
-          echo "Debug alineado correctamente."
 
 
       # ============================================================
@@ -780,8 +660,6 @@ jobs:
 
           test -f "build/WoW-release-aligned.apk"
 
-          echo "Release alineado correctamente."
-
 
       # ============================================================
       # 23. FIRMAR RELEASE
@@ -821,12 +699,11 @@ jobs:
 
           BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
 
-          echo "Verificando firma Debug..."
-
           "$BUILD_TOOLS/apksigner" verify \
             --verbose \
             "build/WoW-debug-signed.apk"
 
+          echo
           echo "Firma Debug valida."
 
 
@@ -841,17 +718,16 @@ jobs:
 
           BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
 
-          echo "Verificando firma Release..."
-
           "$BUILD_TOOLS/apksigner" verify \
             --verbose \
             "build/WoW-release-signed.apk"
 
+          echo
           echo "Firma Release valida."
 
 
       # ============================================================
-      # 26. MOSTRAR RESULTADOS
+      # 26. MOSTRAR RESULTADO
       # ============================================================
 
       - name: Mostrar APK finales
@@ -861,33 +737,33 @@ jobs:
 
           echo
           echo "=========================================="
-          echo " BUILD FINALIZADO"
+          echo " BUILD COMPLETADO"
           echo "=========================================="
 
           echo
-          echo "APK DEBUG:"
+          echo "DEBUG:"
 
           ls -lh \
             "build/WoW-debug-signed.apk"
 
           echo
-          echo "APK RELEASE:"
+          echo "RELEASE:"
 
           ls -lh \
             "build/WoW-release-signed.apk"
 
           echo
-          echo "Archivos build/:"
+          echo "Todos los archivos:"
 
           find build \
             -maxdepth 1 \
             -type f \
-            -printf "%f  %s bytes\n" \
+            -printf "%f - %s bytes\n" \
             | sort
 
 
       # ============================================================
-      # 27. ARTIFACT DEBUG
+      # 27. SUBIR DEBUG
       # ============================================================
 
       - name: Subir APK Debug
@@ -899,7 +775,7 @@ jobs:
 
 
       # ============================================================
-      # 28. ARTIFACT RELEASE
+      # 28. SUBIR RELEASE
       # ============================================================
 
       - name: Subir APK Release
