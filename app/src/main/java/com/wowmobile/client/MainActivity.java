@@ -2,13 +2,11 @@ package com.wowmobile.client;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
-import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -20,6 +18,11 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.documentfile.provider.DocumentFile;
+
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 
 public class MainActivity extends Activity {
 
@@ -73,6 +76,8 @@ public class MainActivity extends Activity {
 
     private native void nativeSetWowFolder(String path);
 
+    private native void nativeTestVfs();
+
     private native void nativeLogin(
             String username,
             String password
@@ -116,6 +121,8 @@ public class MainActivity extends Activity {
 
             wowFolderUri = saved;
 
+            nativeSetWowFolder(saved.toString());
+
             mostrarClienteEncontrado(saved);
 
         } else {
@@ -132,10 +139,20 @@ public class MainActivity extends Activity {
 
         root = new LinearLayout(this);
 
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setGravity(Gravity.CENTER);
+        root.setOrientation(
+                LinearLayout.VERTICAL
+        );
 
-        root.setPadding(25, 25, 25, 25);
+        root.setGravity(
+                Gravity.CENTER
+        );
+
+        root.setPadding(
+                25,
+                25,
+                25,
+                25
+        );
 
         GradientDrawable background =
                 new GradientDrawable(
@@ -152,7 +169,6 @@ public class MainActivity extends Activity {
     }
 
     private void limpiar() {
-
         root.removeAllViews();
     }
 
@@ -256,9 +272,7 @@ public class MainActivity extends Activity {
                 new GradientDrawable();
 
         fondo.setColor(PANEL);
-
         fondo.setCornerRadius(22);
-
         fondo.setStroke(
                 2,
                 Color.rgb(75, 91, 116)
@@ -280,13 +294,9 @@ public class MainActivity extends Activity {
         Button b = new Button(this);
 
         b.setText(texto);
-
         b.setTextColor(TEXT);
-
         b.setTextSize(15);
-
         b.setAllCaps(false);
-
         b.setGravity(Gravity.CENTER);
 
         b.setTypeface(
@@ -305,9 +315,7 @@ public class MainActivity extends Activity {
                 new GradientDrawable();
 
         fondo.setColor(PANEL_LIGHT);
-
         fondo.setCornerRadius(14);
-
         fondo.setStroke(
                 1,
                 Color.rgb(91, 107, 135)
@@ -339,7 +347,6 @@ public class MainActivity extends Activity {
         );
 
         b.setBackground(fondo);
-
         b.setTextColor(GOLD_LIGHT);
 
         return b;
@@ -411,7 +418,7 @@ public class MainActivity extends Activity {
     }
 
     // ============================================================
-    // SELECCION DE CLIENTE
+    // SELECCION CLIENTE
     // ============================================================
 
     private void mostrarSeleccionCliente() {
@@ -471,10 +478,6 @@ public class MainActivity extends Activity {
                         "●  Ningún cliente seleccionado"
                 );
 
-        status.setTextColor(
-                SUBTEXT
-        );
-
         panel.addView(status);
 
         panel.addView(
@@ -498,7 +501,7 @@ public class MainActivity extends Activity {
     }
 
     // ============================================================
-    // SELECTOR SAF
+    // SAF
     // ============================================================
 
     private void abrirSelectorCarpeta() {
@@ -541,7 +544,6 @@ public class MainActivity extends Activity {
                 data == null) {
 
             mostrarSeleccionCliente();
-
             return;
         }
 
@@ -550,7 +552,6 @@ public class MainActivity extends Activity {
         if (uri == null) {
 
             mostrarSeleccionCliente();
-
             return;
         }
 
@@ -569,6 +570,10 @@ public class MainActivity extends Activity {
 
         guardarCarpeta(uri);
 
+        nativeSetWowFolder(
+                uri.toString()
+        );
+
         if (validarCliente(uri)) {
 
             mostrarClienteEncontrado(uri);
@@ -580,7 +585,7 @@ public class MainActivity extends Activity {
     }
 
     // ============================================================
-    // VALIDACION
+    // VALIDACION CLIENTE
     // ============================================================
 
     private boolean validarCliente(
@@ -609,14 +614,15 @@ public class MainActivity extends Activity {
                 continue;
             }
 
-            if (file.isDirectory()) {
+            if (!file.isDirectory()) {
+                continue;
+            }
 
-                if (nombre.equalsIgnoreCase("cameras") ||
-                        nombre.equalsIgnoreCase("character") ||
-                        nombre.equalsIgnoreCase("creatures")) {
+            if (nombre.equalsIgnoreCase("cameras") ||
+                    nombre.equalsIgnoreCase("character") ||
+                    nombre.equalsIgnoreCase("creatures")) {
 
-                    return true;
-                }
+                return true;
             }
         }
 
@@ -694,48 +700,76 @@ public class MainActivity extends Activity {
         agregarResultado(
                 panel,
                 "Cameras",
-                existeCarpeta(
-                        uri,
-                        "cameras"
-                )
+                existeCarpeta(uri, "cameras")
         );
 
         agregarResultado(
                 panel,
                 "Character",
-                existeCarpeta(
-                        uri,
-                        "character"
-                )
+                existeCarpeta(uri, "character")
         );
 
         agregarResultado(
                 panel,
                 "Creatures",
-                existeCarpeta(
-                        uri,
-                        "creatures"
+                existeCarpeta(uri, "creatures")
+        );
+
+        panel.addView(
+                espacio(15)
+        );
+
+        agregarResultado(
+                panel,
+                "SAF / almacenamiento",
+                true
+        );
+
+        panel.addView(
+                espacio(10)
+        );
+
+        TextView vfs =
+                subtitulo(
+                        "VFS Android preparado\n" +
+                        "Los archivos serán leídos directamente desde el cliente."
+                );
+
+        vfs.setTextColor(BLUE);
+
+        panel.addView(vfs);
+
+        panel.addView(
+                espacio(18)
+        );
+
+        Button probar =
+                crearBoton(
+                        "PROBAR LECTURA DEL CLIENTE"
+                );
+
+        probar.setOnClickListener(
+                v -> {
+
+                    statusVfs();
+
+                    try {
+                        nativeTestVfs();
+                    } catch (Exception ignored) {
+                    }
+                }
+        );
+
+        panel.addView(
+                probar,
+                new LinearLayout.LayoutParams(
+                        360,
+                        60
                 )
         );
 
         panel.addView(
-                espacio(20)
-        );
-
-        TextView aviso =
-                subtitulo(
-                        "El cliente está listo para continuar.\n" +
-                        "La conexión todavía no se inicia."
-                );
-
-        aviso.setTextColor(
-                BLUE
-        );
-
-        panel.addView(aviso);
-
-        panel.addView(
-                espacio(18)
+                espacio(10)
         );
 
         Button continuar =
@@ -768,9 +802,7 @@ public class MainActivity extends Activity {
                 v -> abrirSelectorCarpeta()
         );
 
-        panel.addView(
-                cambiar
-        );
+        panel.addView(cambiar);
 
         root.addView(
                 panel,
@@ -779,15 +811,15 @@ public class MainActivity extends Activity {
                         ViewGroup.LayoutParams.WRAP_CONTENT
                 )
         );
+    }
 
-        try {
+    private void statusVfs() {
 
-            nativeSetWowFolder(
-                    uri.toString()
-            );
-
-        } catch (Exception ignored) {
-        }
+        Toast.makeText(
+                this,
+                "Probando lectura SAF...",
+                Toast.LENGTH_SHORT
+        ).show();
     }
 
     private void agregarResultado(
@@ -813,9 +845,7 @@ public class MainActivity extends Activity {
                         SUBTEXT
         );
 
-        panel.addView(
-                v
-        );
+        panel.addView(v);
     }
 
     // ============================================================
@@ -920,9 +950,7 @@ public class MainActivity extends Activity {
         );
 
         panel.addView(
-                etiqueta(
-                        "USUARIO"
-                )
+                etiqueta("USUARIO")
         );
 
         usernameInput =
@@ -946,9 +974,7 @@ public class MainActivity extends Activity {
         );
 
         panel.addView(
-                etiqueta(
-                        "CONTRASEÑA"
-                )
+                etiqueta("CONTRASEÑA")
         );
 
         passwordInput =
@@ -960,8 +986,8 @@ public class MainActivity extends Activity {
         );
 
         passwordInput.setInputType(
-                InputType.TYPE_CLASS_TEXT |
-                InputType.TYPE_TEXT_VARIATION_PASSWORD
+                android.text.InputType.TYPE_CLASS_TEXT |
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
         );
 
         panel.addView(
@@ -1000,12 +1026,9 @@ public class MainActivity extends Activity {
         status =
                 subtitulo(
                         "●  Cliente cargado\n" +
+                        "●  VFS disponible\n" +
                         "●  Conexión no iniciada"
                 );
-
-        status.setTextColor(
-                SUBTEXT
-        );
 
         panel.addView(status);
 
@@ -1122,9 +1145,7 @@ public class MainActivity extends Activity {
                 "●  Protocolo WoW todavía no implementado"
         );
 
-        status.setTextColor(
-                GOLD
-        );
+        status.setTextColor(GOLD);
 
         try {
 
@@ -1183,5 +1204,248 @@ public class MainActivity extends Activity {
 
             return null;
         }
+    }
+
+    // ============================================================
+    // VFS JNI
+    // ============================================================
+
+    /*
+     * Estas funciones son llamadas desde wow_engine.cpp.
+     *
+     * IMPORTANTE:
+     *
+     * C++ NO intenta abrir content:// directamente.
+     * Java usa ContentResolver/DocumentFile y devuelve
+     * los datos al motor nativo.
+     */
+
+    public boolean vfsExists(
+            String relativePath
+    ) {
+
+        DocumentFile file =
+                encontrarDocumento(
+                        relativePath
+                );
+
+        return file != null;
+    }
+
+    public boolean vfsIsDirectory(
+            String relativePath
+    ) {
+
+        DocumentFile file =
+                encontrarDocumento(
+                        relativePath
+                );
+
+        return file != null &&
+                file.isDirectory();
+    }
+
+    public String[] vfsList(
+            String relativePath
+    ) {
+
+        DocumentFile directory =
+                encontrarDocumento(
+                        relativePath
+                );
+
+        if (directory == null ||
+                !directory.isDirectory()) {
+
+            return new String[0];
+        }
+
+        DocumentFile[] files =
+                directory.listFiles();
+
+        List<String> result =
+                new ArrayList<>();
+
+        for (DocumentFile file : files) {
+
+            String name =
+                    file.getName();
+
+            if (name != null) {
+
+                if (file.isDirectory()) {
+
+                    result.add(
+                            name + "/"
+                    );
+
+                } else {
+
+                    result.add(name);
+                }
+            }
+        }
+
+        return result.toArray(
+                new String[0]
+        );
+    }
+
+    public byte[] vfsReadFile(
+            String relativePath
+    ) {
+
+        DocumentFile file =
+                encontrarDocumento(
+                        relativePath
+                );
+
+        if (file == null ||
+                file.isDirectory()) {
+
+            return null;
+        }
+
+        /*
+         * Protección inicial.
+         *
+         * Para archivos grandes como MPQ/BLP/M2
+         * posteriormente implementaremos streaming.
+         *
+         * Esta primera versión permite probar el VFS
+         * sin cargar archivos gigantes accidentalmente.
+         */
+
+        final long MAX_READ =
+                16L * 1024L * 1024L;
+
+        if (file.length() > MAX_READ) {
+
+            return null;
+        }
+
+        try {
+
+            InputStream input =
+                    getContentResolver()
+                            .openInputStream(
+                                    file.getUri()
+                            );
+
+            if (input == null) {
+                return null;
+            }
+
+            ByteArrayOutputStream output =
+                    new ByteArrayOutputStream();
+
+            byte[] buffer =
+                    new byte[64 * 1024];
+
+            int count;
+
+            long total = 0;
+
+            while ((count = input.read(buffer)) != -1) {
+
+                total += count;
+
+                if (total > MAX_READ) {
+
+                    input.close();
+
+                    return null;
+                }
+
+                output.write(
+                        buffer,
+                        0,
+                        count
+                );
+            }
+
+            input.close();
+
+            return output.toByteArray();
+
+        } catch (Exception e) {
+
+            return null;
+        }
+    }
+
+    private DocumentFile encontrarDocumento(
+            String relativePath
+    ) {
+
+        if (wowFolderUri == null ||
+                relativePath == null) {
+
+            return null;
+        }
+
+        DocumentFile current =
+                DocumentFile.fromTreeUri(
+                        this,
+                        wowFolderUri
+                );
+
+        if (current == null) {
+            return null;
+        }
+
+        String path =
+                relativePath
+                        .replace(
+                                '\\',
+                                '/'
+                        );
+
+        while (path.startsWith("/")) {
+
+            path =
+                    path.substring(1);
+        }
+
+        if (path.isEmpty()) {
+
+            return current;
+        }
+
+        String[] parts =
+                path.split("/");
+
+        for (String part : parts) {
+
+            if (part.isEmpty()) {
+                continue;
+            }
+
+            DocumentFile next = null;
+
+            for (DocumentFile child :
+                    current.listFiles()) {
+
+                String name =
+                        child.getName();
+
+                if (name != null &&
+                        name.equalsIgnoreCase(part)) {
+
+                    next = child;
+
+                    break;
+                }
+            }
+
+            if (next == null) {
+
+                return null;
+            }
+
+            current = next;
+        }
+
+        return current;
     }
 }
