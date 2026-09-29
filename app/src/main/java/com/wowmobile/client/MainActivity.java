@@ -7,7 +7,7 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
-import android.provider.Settings;
+import android.text.InputType;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -25,6 +25,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 public class MainActivity extends Activity {
 
@@ -44,16 +45,18 @@ public class MainActivity extends Activity {
     private static final int RED = Color.rgb(225, 80, 80);
     private static final int BLUE = Color.rgb(75, 155, 230);
 
+    private static final int MAX_SCAN_DEPTH = 8;
+    private static final int MAX_SCAN_ITEMS = 50000;
+
     private Uri wowFolderUri;
 
     private LinearLayout rootLayout;
-    private TextView titleText;
     private TextView statusText;
 
     private EditText usernameInput;
     private EditText passwordInput;
 
-    private Button testVfsButton;
+    private Button scanButton;
     private Button continueLoginButton;
 
     static {
@@ -61,13 +64,30 @@ public class MainActivity extends Activity {
     }
 
     private native void nativeInit();
-    private native void nativeSetWowFolder(String uri);
-    private native String nativeTestVfs();
-    private native void nativeLogin(String username, String password);
 
-    private native void nativeTouchDown(float x, float y);
-    private native void nativeTouchMove(float x, float y);
-    private native void nativeTouchUp(float x, float y);
+    private native void nativeSetWowFolder(String uri);
+
+    private native String nativeScanClient();
+
+    private native void nativeLogin(
+            String username,
+            String password
+    );
+
+    private native void nativeTouchDown(
+            float x,
+            float y
+    );
+
+    private native void nativeTouchMove(
+            float x,
+            float y
+    );
+
+    private native void nativeTouchUp(
+            float x,
+            float y
+    );
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -78,151 +98,267 @@ public class MainActivity extends Activity {
 
         nativeInit();
 
-        crearPantallaInicial();
+        mostrarSeleccionCliente();
 
         cargarCarpetaGuardada();
     }
 
     // ============================================================
-    // UI BASE
+    // UI
     // ============================================================
 
     private void prepararRoot() {
         rootLayout = new LinearLayout(this);
-        rootLayout.setOrientation(LinearLayout.VERTICAL);
-        rootLayout.setGravity(Gravity.CENTER_HORIZONTAL);
-        rootLayout.setPadding(dp(28), dp(24), dp(28), dp(24));
+
+        rootLayout.setOrientation(
+                LinearLayout.VERTICAL
+        );
+
+        rootLayout.setGravity(
+                Gravity.CENTER_HORIZONTAL
+        );
+
+        rootLayout.setPadding(
+                dp(28),
+                dp(24),
+                dp(28),
+                dp(24)
+        );
+
         rootLayout.setBackgroundColor(BG);
 
         setContentView(rootLayout);
     }
 
-    private TextView crearTitulo(String texto, int size) {
-        TextView view = new TextView(this);
+    private TextView titulo(
+            String texto,
+            int size
+    ) {
+        TextView view =
+                new TextView(this);
 
         view.setText(texto);
         view.setTextColor(GOLD_LIGHT);
         view.setTextSize(size);
-        view.setTypeface(Typeface.create(Typeface.SERIF, Typeface.BOLD));
         view.setGravity(Gravity.CENTER);
+
+        view.setTypeface(
+                Typeface.create(
+                        Typeface.SERIF,
+                        Typeface.BOLD
+                )
+        );
+
         view.setLetterSpacing(0.05f);
 
         return view;
     }
 
-    private TextView crearTexto(String texto, int size, int color) {
-        TextView view = new TextView(this);
+    private TextView texto(
+            String texto,
+            int size,
+            int color
+    ) {
+        TextView view =
+                new TextView(this);
 
         view.setText(texto);
         view.setTextColor(color);
         view.setTextSize(size);
+
         view.setGravity(Gravity.CENTER);
 
         return view;
     }
 
-    private Button crearBoton(String texto) {
-        Button button = new Button(this);
+    private Button boton(
+            String texto
+    ) {
+        Button button =
+                new Button(this);
 
         button.setText(texto);
         button.setTextColor(WHITE);
         button.setTextSize(14);
-        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+
+        button.setTypeface(
+                Typeface.DEFAULT,
+                Typeface.BOLD
+        );
+
         button.setAllCaps(false);
-        button.setMinHeight(dp(52));
-        button.setPadding(dp(16), dp(8), dp(16), dp(8));
+
+        button.setMinHeight(
+                dp(52)
+        );
+
+        button.setPadding(
+                dp(16),
+                dp(8),
+                dp(16),
+                dp(8)
+        );
 
         return button;
-    }
-
-    private View separador(int height) {
-        View view = new View(this);
-        view.setLayoutParams(
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        dp(height)
-                )
-        );
-        return view;
     }
 
     private void agregar(View view) {
         rootLayout.addView(view);
     }
 
-    private void agregar(View view, int width, int height) {
+    private void agregar(
+            View view,
+            int width,
+            int height
+    ) {
         LinearLayout.LayoutParams params =
                 new LinearLayout.LayoutParams(
-                        width == -1 ? ViewGroup.LayoutParams.MATCH_PARENT : dp(width),
-                        height == -1 ? ViewGroup.LayoutParams.WRAP_CONTENT : dp(height)
+                        width == -1
+                                ? ViewGroup.LayoutParams.MATCH_PARENT
+                                : dp(width),
+
+                        height == -1
+                                ? ViewGroup.LayoutParams.WRAP_CONTENT
+                                : dp(height)
                 );
 
-        rootLayout.addView(view, params);
+        rootLayout.addView(
+                view,
+                params
+        );
+    }
+
+    private View espacio(
+            int height
+    ) {
+        View view =
+                new View(this);
+
+        view.setLayoutParams(
+                new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        dp(height)
+                )
+        );
+
+        return view;
     }
 
     // ============================================================
-    // PANTALLA INICIAL
+    // PANTALLA SELECCIÓN
     // ============================================================
 
-    private void crearPantallaInicial() {
+    private void mostrarSeleccionCliente() {
         prepararRoot();
 
-        agregar(separador(10));
+        agregar(
+                espacio(10)
+        );
 
-        titleText = crearTitulo("WORLD OF WARCRAFT", 26);
-        agregar(titleText, -1, -2);
+        agregar(
+                titulo(
+                        "WORLD OF WARCRAFT",
+                        26
+                ),
+                -1,
+                -2
+        );
 
         TextView subtitle =
-                crearTexto("MOBILE CLIENT", 16, GOLD);
-        subtitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        agregar(subtitle, -1, -2);
+                texto(
+                        "MOBILE CLIENT",
+                        16,
+                        GOLD
+                );
 
-        agregar(separador(24));
-
-        TextView description = crearTexto(
-                "Selecciona la carpeta donde tienes los archivos\n" +
-                "extraídos del cliente de World of Warcraft 3.3.5a.",
-                15,
-                MUTED
+        subtitle.setTypeface(
+                Typeface.DEFAULT,
+                Typeface.BOLD
         );
 
-        agregar(description, -1, -2);
-
-        agregar(separador(24));
-
-        Button selectButton = crearBoton("SELECCIONAR CARPETA DEL CLIENTE");
-        selectButton.setOnClickListener(v -> seleccionarCarpeta());
-
-        agregar(selectButton, -1, -2);
-
-        agregar(separador(20));
-
-        statusText = crearTexto(
-                "Esperando selección del cliente...",
-                14,
-                MUTED
+        agregar(
+                subtitle,
+                -1,
+                -2
         );
 
-        agregar(statusText, -1, -2);
-
-        agregar(separador(20));
-
-        TextView info = crearTexto(
-                "El cliente permanece fuera del APK.\n" +
-                "La aplicación accede a los archivos mediante almacenamiento SAF.",
-                12,
-                MUTED
+        agregar(
+                espacio(24)
         );
 
-        agregar(info, -1, -2);
+        agregar(
+                texto(
+                        "Selecciona la carpeta raíz de tu cliente\n" +
+                        "de World of Warcraft 3.3.5a.",
+                        15,
+                        MUTED
+                ),
+                -1,
+                -2
+        );
+
+        agregar(
+                espacio(24)
+        );
+
+        Button selectButton =
+                boton(
+                        "SELECCIONAR CARPETA DEL CLIENTE"
+                );
+
+        selectButton.setOnClickListener(
+                v -> seleccionarCarpeta()
+        );
+
+        agregar(
+                selectButton,
+                -1,
+                -2
+        );
+
+        agregar(
+                espacio(20)
+        );
+
+        statusText =
+                texto(
+                        "Esperando carpeta...",
+                        14,
+                        MUTED
+                );
+
+        agregar(
+                statusText,
+                -1,
+                -2
+        );
+
+        agregar(
+                espacio(20)
+        );
+
+        agregar(
+                texto(
+                        "La aplicación descubrirá automáticamente\n" +
+                        "las subcarpetas y archivos del cliente.",
+                        12,
+                        MUTED
+                ),
+                -1,
+                -2
+        );
     }
 
     // ============================================================
-    // CARPETA DEL CLIENTE
+    // SELECCIONAR CARPETA
     // ============================================================
 
     private void seleccionarCarpeta() {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+
+        Intent intent =
+                new Intent(
+                        Intent.ACTION_OPEN_DOCUMENT_TREE
+                );
 
         intent.addFlags(
                 Intent.FLAG_GRANT_READ_URI_PERMISSION |
@@ -230,48 +366,62 @@ public class MainActivity extends Activity {
                 Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
         );
 
-        startActivityForResult(intent, REQUEST_WOW_FOLDER);
+        startActivityForResult(
+                intent,
+                REQUEST_WOW_FOLDER
+        );
     }
 
     private void cargarCarpetaGuardada() {
+
         SharedPreferences prefs =
-                getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+                getSharedPreferences(
+                        PREFS_NAME,
+                        MODE_PRIVATE
+                );
 
-        String savedUri = prefs.getString(PREF_WOW_URI, null);
+        String saved =
+                prefs.getString(
+                        PREF_WOW_URI,
+                        null
+                );
 
-        if (savedUri == null || savedUri.isEmpty()) {
+        if (saved == null ||
+                saved.isEmpty()) {
             return;
         }
 
         try {
-            Uri uri = Uri.parse(savedUri);
 
-            if (uri == null) {
-                return;
-            }
-
-            int flags =
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION |
-                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION;
-
-            try {
-                getContentResolver().takePersistableUriPermission(uri, flags);
-            } catch (Exception ignored) {
-            }
+            Uri uri =
+                    Uri.parse(saved);
 
             wowFolderUri = uri;
 
-            nativeSetWowFolder(uri.toString());
-
-            if (validarCliente()) {
-                mostrarClienteEncontrado();
+            try {
+                getContentResolver()
+                        .takePersistableUriPermission(
+                                uri,
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        );
+            } catch (Exception ignored) {
             }
 
+            nativeSetWowFolder(
+                    uri.toString()
+            );
+
+            mostrarClienteDetectado();
+
         } catch (Exception e) {
+
             statusText.setText(
                     "No se pudo recuperar la carpeta guardada."
             );
-            statusText.setTextColor(RED);
+
+            statusText.setTextColor(
+                    RED
+            );
         }
     }
 
@@ -281,205 +431,235 @@ public class MainActivity extends Activity {
             int resultCode,
             Intent data
     ) {
-        super.onActivityResult(requestCode, resultCode, data);
+        super.onActivityResult(
+                requestCode,
+                resultCode,
+                data
+        );
 
         if (requestCode != REQUEST_WOW_FOLDER) {
             return;
         }
 
-        if (resultCode != RESULT_OK || data == null) {
+        if (resultCode != RESULT_OK ||
+                data == null) {
             return;
         }
 
-        Uri uri = data.getData();
+        Uri uri =
+                data.getData();
 
         if (uri == null) {
             return;
         }
 
         try {
+
             int flags =
                     data.getFlags() &
-                    (Intent.FLAG_GRANT_READ_URI_PERMISSION |
-                     Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                    (
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION |
+                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    );
 
-            getContentResolver().takePersistableUriPermission(uri, flags);
+            getContentResolver()
+                    .takePersistableUriPermission(
+                            uri,
+                            flags
+                    );
+
         } catch (Exception ignored) {
         }
 
         wowFolderUri = uri;
 
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        getSharedPreferences(
+                PREFS_NAME,
+                MODE_PRIVATE
+        )
                 .edit()
-                .putString(PREF_WOW_URI, uri.toString())
+                .putString(
+                        PREF_WOW_URI,
+                        uri.toString()
+                )
                 .apply();
 
-        nativeSetWowFolder(uri.toString());
-
-        if (validarCliente()) {
-            mostrarClienteEncontrado();
-        } else {
-            mostrarClienteNoValido();
-        }
-    }
-
-    // ============================================================
-    // VALIDACIÓN BÁSICA
-    // ============================================================
-
-    private boolean validarCliente() {
-        if (wowFolderUri == null) {
-            return false;
-        }
-
-        boolean cameras = vfsIsDirectory("cameras");
-        boolean character = vfsIsDirectory("character");
-        boolean creatures = vfsIsDirectory("creatures");
-
-        return cameras || character || creatures;
-    }
-
-    private void mostrarClienteNoValido() {
-        prepararRoot();
-
-        agregar(separador(20));
-
-        TextView title =
-                crearTitulo("CLIENTE NO DETECTADO", 24);
-        title.setTextColor(RED);
-        agregar(title, -1, -2);
-
-        agregar(separador(20));
-
-        TextView message = crearTexto(
-                "La carpeta seleccionada no parece contener\n" +
-                "la estructura esperada del cliente.",
-                15,
-                WHITE
+        nativeSetWowFolder(
+                uri.toString()
         );
 
-        agregar(message, -1, -2);
-
-        agregar(separador(25));
-
-        TextView expected = crearTexto(
-                "Se buscan carpetas como:\n\n" +
-                "cameras\n" +
-                "character\n" +
-                "creatures",
-                14,
-                MUTED
-        );
-
-        agregar(expected, -1, -2);
-
-        agregar(separador(25));
-
-        Button retry = crearBoton("CAMBIAR CARPETA");
-        retry.setOnClickListener(v -> seleccionarCarpeta());
-
-        agregar(retry, -1, -2);
+        mostrarClienteDetectado();
     }
 
     // ============================================================
     // CLIENTE DETECTADO
     // ============================================================
 
-    private void mostrarClienteEncontrado() {
+    private void mostrarClienteDetectado() {
+
         prepararRoot();
 
-        agregar(separador(8));
+        agregar(
+                espacio(8)
+        );
 
-        TextView title =
-                crearTitulo("CLIENTE DETECTADO", 25);
-        agregar(title, -1, -2);
+        agregar(
+                titulo(
+                        "CARPETA DEL CLIENTE",
+                        24
+                ),
+                -1,
+                -2
+        );
 
-        agregar(separador(8));
+        agregar(
+                espacio(8)
+        );
 
-        TextView subtitle =
-                crearTexto(
-                        "WoW 3.3.5a / VFS Android",
+        agregar(
+                texto(
+                        "Raíz seleccionada correctamente",
                         14,
-                        MUTED
+                        GREEN
+                ),
+                -1,
+                -2
+        );
+
+        agregar(
+                espacio(20)
+        );
+
+        LinearLayout panel =
+                new LinearLayout(this);
+
+        panel.setOrientation(
+                LinearLayout.VERTICAL
+        );
+
+        panel.setPadding(
+                dp(18),
+                dp(15),
+                dp(18),
+                dp(15)
+        );
+
+        panel.setBackgroundColor(
+                PANEL
+        );
+
+        agregar(
+                panel,
+                -1,
+                -2
+        );
+
+        agregarLinea(
+                panel,
+                "✓",
+                "Raíz SAF",
+                GREEN
+        );
+
+        agregarLinea(
+                panel,
+                "✓",
+                "VFS Android",
+                GREEN
+        );
+
+        agregarLinea(
+                panel,
+                "?",
+                "Estructura automática",
+                BLUE
+        );
+
+        agregarLinea(
+                panel,
+                "?",
+                "Archivos y subcarpetas",
+                BLUE
+        );
+
+        agregar(
+                espacio(20)
+        );
+
+        scanButton =
+                boton(
+                        "ESCANEAR CLIENTE"
                 );
 
-        agregar(subtitle, -1, -2);
-
-        agregar(separador(22));
-
-        LinearLayout checks = new LinearLayout(this);
-        checks.setOrientation(LinearLayout.VERTICAL);
-        checks.setPadding(dp(20), dp(15), dp(20), dp(15));
-        checks.setBackgroundColor(PANEL);
-
-        agregarCheck(checks, "✓  cameras", vfsIsDirectory("cameras"));
-        agregarCheck(checks, "✓  character", vfsIsDirectory("character"));
-        agregarCheck(checks, "✓  creatures", vfsIsDirectory("creatures"));
-        agregarCheck(checks, "✓  SAF / almacenamiento", wowFolderUri != null);
-        agregarCheck(checks, "✓  VFS Android preparado", true);
-
-        agregar(checks, -1, -2);
-
-        agregar(separador(22));
-
-        testVfsButton = crearBoton("PROBAR LECTURA DEL CLIENTE");
-
-        testVfsButton.setOnClickListener(
-                v -> ejecutarPruebaVfs()
+        scanButton.setOnClickListener(
+                v -> ejecutarEscaneo()
         );
 
-        agregar(testVfsButton, -1, -2);
-
-        agregar(separador(12));
-
-        continueLoginButton =
-                crearBoton("CONTINUAR AL LOGIN");
-
-        continueLoginButton.setEnabled(false);
-        continueLoginButton.setAlpha(0.45f);
-
-        continueLoginButton.setOnClickListener(
-                v -> mostrarLogin()
+        agregar(
+                scanButton,
+                -1,
+                -2
         );
 
-        agregar(continueLoginButton, -1, -2);
-
-        agregar(separador(12));
+        agregar(
+                espacio(12)
+        );
 
         Button change =
-                crearBoton("Cambiar carpeta");
+                boton(
+                        "CAMBIAR CARPETA"
+                );
 
         change.setOnClickListener(
                 v -> seleccionarCarpeta()
         );
 
-        agregar(change, -1, -2);
-
-        agregar(separador(15));
-
-        TextView note = crearTexto(
-                "La prueba de lectura no modifica ningún archivo.",
-                12,
-                MUTED
+        agregar(
+                change,
+                -1,
+                -2
         );
 
-        agregar(note, -1, -2);
+        agregar(
+                espacio(16)
+        );
+
+        agregar(
+                texto(
+                        "La aplicación no necesita conocer previamente\n" +
+                        "los nombres de las subcarpetas.",
+                        12,
+                        MUTED
+                ),
+                -1,
+                -2
+        );
     }
 
-    private void agregarCheck(
+    private void agregarLinea(
             LinearLayout parent,
-            String text,
-            boolean ok
+            String icon,
+            String label,
+            int color
     ) {
         TextView view =
-                crearTexto(
-                        ok ? text : text.replace("✓", "✗"),
+                texto(
+                        icon + "  " + label,
                         14,
-                        ok ? GREEN : RED
+                        color
                 );
 
-        view.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
-        view.setPadding(dp(4), dp(7), dp(4), dp(7));
+        view.setGravity(
+                Gravity.LEFT |
+                Gravity.CENTER_VERTICAL
+        );
+
+        view.setPadding(
+                dp(4),
+                dp(7),
+                dp(4),
+                dp(7)
+        );
 
         parent.addView(
                 view,
@@ -491,134 +671,292 @@ public class MainActivity extends Activity {
     }
 
     // ============================================================
-    // PRUEBA VFS
+    // ESCANEAR
     // ============================================================
 
-    private void ejecutarPruebaVfs() {
+    private void ejecutarEscaneo() {
+
         if (wowFolderUri == null) {
             Toast.makeText(
                     this,
-                    "Primero selecciona la carpeta del cliente.",
+                    "Selecciona primero la carpeta del cliente.",
                     Toast.LENGTH_LONG
             ).show();
 
             return;
         }
 
-        testVfsButton.setEnabled(false);
-        testVfsButton.setText("LEYENDO CLIENTE...");
+        scanButton.setEnabled(false);
 
-        String resultado;
+        scanButton.setText(
+                "ESCANEANDO CLIENTE..."
+        );
+
+        String result;
 
         try {
-            resultado = nativeTestVfs();
+
+            result =
+                    nativeScanClient();
+
         } catch (Exception e) {
-            resultado =
-                    "VFS_ERROR\n" +
-                    "Excepción durante la prueba: " +
+
+            result =
+                    "SCAN_ERROR\n" +
+                    "[ERROR] " +
                     e.getClass().getSimpleName() +
                     "\n" +
-                    e.getMessage();
+                    String.valueOf(
+                            e.getMessage()
+                    );
         }
 
-        mostrarResultadoVfs(resultado);
+        mostrarResultadoEscaneo(
+                result
+        );
     }
 
-    private void mostrarResultadoVfs(String resultado) {
+    // ============================================================
+    // RESULTADO DEL ESCANEO
+    // ============================================================
+
+    private void mostrarResultadoEscaneo(
+            String result
+    ) {
         prepararRoot();
 
-        agregar(separador(8));
+        agregar(
+                espacio(6)
+        );
 
-        TextView title =
-                crearTitulo("PRUEBA DEL VFS", 24);
-        agregar(title, -1, -2);
+        agregar(
+                titulo(
+                        "ESCANEO DEL CLIENTE",
+                        23
+                ),
+                -1,
+                -2
+        );
 
-        agregar(separador(8));
+        agregar(
+                espacio(8)
+        );
 
-        ScrollView scroll = new ScrollView(this);
+        if (result == null ||
+                result.trim().isEmpty()) {
 
-        LinearLayout content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
+            result =
+                    "SCAN_ERROR\n" +
+                    "[ERROR] El motor no devolvió resultados.";
+        }
+
+        boolean success =
+                result.startsWith(
+                        "SCAN_OK"
+                );
+
+        ScrollView scroll =
+                new ScrollView(this);
+
+        LinearLayout content =
+                new LinearLayout(this);
+
+        content.setOrientation(
+                LinearLayout.VERTICAL
+        );
+
         content.setPadding(
                 dp(18),
                 dp(14),
                 dp(18),
                 dp(14)
         );
-        content.setBackgroundColor(PANEL);
 
-        if (resultado == null || resultado.trim().isEmpty()) {
-            resultado =
-                    "VFS_ERROR\n" +
-                    "El motor nativo no devolvió ningún resultado.";
-        }
+        content.setBackgroundColor(
+                PANEL
+        );
 
-        String[] lines = resultado.split("\\n");
-
-        boolean success = false;
+        String[] lines =
+                result.split("\\n");
 
         for (String line : lines) {
+
             TextView row =
-                    crearTexto(line, 13, WHITE);
+                    texto(
+                            line,
+                            12,
+                            WHITE
+                    );
 
-            row.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
-            row.setPadding(0, dp(4), 0, dp(4));
+            row.setGravity(
+                    Gravity.LEFT |
+                    Gravity.CENTER_VERTICAL
+            );
 
-            if (line.startsWith("VFS_OK")) {
-                row.setTextColor(GREEN);
-                row.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-                success = true;
-            } else if (line.startsWith("VFS_ERROR")) {
-                row.setTextColor(RED);
-                row.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-            } else if (line.startsWith("[OK]")) {
-                row.setTextColor(GREEN);
-            } else if (line.startsWith("[ERROR]")) {
-                row.setTextColor(RED);
-            } else if (line.startsWith("[INFO]")) {
-                row.setTextColor(BLUE);
-            } else {
-                row.setTextColor(WHITE);
+            row.setPadding(
+                    0,
+                    dp(3),
+                    0,
+                    dp(3)
+            );
+
+            if (line.startsWith("SCAN_OK")) {
+
+                row.setTextColor(
+                        GREEN
+                );
+
+                row.setTypeface(
+                        Typeface.DEFAULT,
+                        Typeface.BOLD
+                );
+
+            } else if (
+                    line.startsWith("SCAN_ERROR")
+            ) {
+
+                row.setTextColor(
+                        RED
+                );
+
+                row.setTypeface(
+                        Typeface.DEFAULT,
+                        Typeface.BOLD
+                );
+
+            } else if (
+                    line.startsWith("[OK]")
+            ) {
+
+                row.setTextColor(
+                        GREEN
+                );
+
+            } else if (
+                    line.startsWith("[ERROR]")
+            ) {
+
+                row.setTextColor(
+                        RED
+                );
+
+            } else if (
+                    line.startsWith("[DIR]")
+            ) {
+
+                row.setTextColor(
+                        GOLD_LIGHT
+                );
+
+            } else if (
+                    line.startsWith("[FILE]")
+            ) {
+
+                row.setTextColor(
+                        WHITE
+                );
+
+            } else if (
+                    line.startsWith("[TYPE]")
+            ) {
+
+                row.setTextColor(
+                        BLUE
+                );
+
+            } else if (
+                    line.startsWith("[INFO]")
+            ) {
+
+                row.setTextColor(
+                        MUTED
+                );
             }
 
-            content.addView(row);
+            content.addView(
+                    row
+            );
         }
 
-        scroll.addView(content);
+        scroll.addView(
+                content
+        );
 
-        LinearLayout.LayoutParams scrollParams =
+        rootLayout.addView(
+                scroll,
                 new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         0,
                         1.0f
-                );
+                )
+        );
 
-        rootLayout.addView(scroll, scrollParams);
-
-        agregar(separador(12));
+        agregar(
+                espacio(10)
+        );
 
         continueLoginButton =
-                crearBoton("CONTINUAR AL LOGIN");
+                boton(
+                        "CONTINUAR AL LOGIN"
+                );
 
-        continueLoginButton.setEnabled(success);
-        continueLoginButton.setAlpha(success ? 1.0f : 0.45f);
+        continueLoginButton.setEnabled(
+                success
+        );
+
+        continueLoginButton.setAlpha(
+                success
+                        ? 1.0f
+                        : 0.45f
+        );
 
         continueLoginButton.setOnClickListener(
                 v -> mostrarLogin()
         );
 
-        agregar(continueLoginButton, -1, -2);
-
-        agregar(separador(8));
-
-        Button back =
-                crearBoton("VOLVER");
-
-        back.setOnClickListener(
-                v -> mostrarClienteEncontrado()
+        agregar(
+                continueLoginButton,
+                -1,
+                -2
         );
 
-        agregar(back, -1, -2);
+        agregar(
+                espacio(8)
+        );
+
+        Button rescan =
+                boton(
+                        "VOLVER A ESCANEAR"
+                );
+
+        rescan.setOnClickListener(
+                v -> ejecutarEscaneo()
+        );
+
+        agregar(
+                rescan,
+                -1,
+                -2
+        );
+
+        agregar(
+                espacio(8)
+        );
+
+        Button change =
+                boton(
+                        "CAMBIAR CARPETA"
+                );
+
+        change.setOnClickListener(
+                v -> seleccionarCarpeta()
+        );
+
+        agregar(
+                change,
+                -1,
+                -2
+        );
     }
 
     // ============================================================
@@ -626,16 +964,24 @@ public class MainActivity extends Activity {
     // ============================================================
 
     private void mostrarLogin() {
+
         prepararRoot();
 
-        agregar(separador(10));
+        agregar(
+                espacio(10)
+        );
 
-        TextView title =
-                crearTitulo("WORLD OF WARCRAFT", 25);
-        agregar(title, -1, -2);
+        agregar(
+                titulo(
+                        "WORLD OF WARCRAFT",
+                        25
+                ),
+                -1,
+                -2
+        );
 
         TextView subtitle =
-                crearTexto(
+                texto(
                         "INICIAR SESIÓN",
                         15,
                         GOLD
@@ -646,114 +992,208 @@ public class MainActivity extends Activity {
                 Typeface.BOLD
         );
 
-        agregar(subtitle, -1, -2);
+        agregar(
+                subtitle,
+                -1,
+                -2
+        );
 
-        agregar(separador(28));
+        agregar(
+                espacio(28)
+        );
 
         usernameInput =
                 new EditText(this);
 
-        usernameInput.setHint("Usuario");
-        usernameInput.setHintTextColor(MUTED);
-        usernameInput.setTextColor(WHITE);
-        usernameInput.setTextSize(16);
-        usernameInput.setSingleLine(true);
+        usernameInput.setHint(
+                "Usuario"
+        );
+
+        usernameInput.setHintTextColor(
+                MUTED
+        );
+
+        usernameInput.setTextColor(
+                WHITE
+        );
+
+        usernameInput.setTextSize(
+                16
+        );
+
+        usernameInput.setSingleLine(
+                true
+        );
+
         usernameInput.setPadding(
                 dp(16),
                 0,
                 dp(16),
                 0
         );
-        usernameInput.setBackgroundColor(PANEL_2);
 
-        agregar(usernameInput, -1, 56);
+        usernameInput.setBackgroundColor(
+                PANEL_2
+        );
 
-        agregar(separador(14));
+        agregar(
+                usernameInput,
+                -1,
+                56
+        );
+
+        agregar(
+                espacio(14)
+        );
 
         passwordInput =
                 new EditText(this);
 
-        passwordInput.setHint("Contraseña");
-        passwordInput.setHintTextColor(MUTED);
-        passwordInput.setTextColor(WHITE);
-        passwordInput.setTextSize(16);
-        passwordInput.setSingleLine(true);
-        passwordInput.setInputType(
-                android.text.InputType.TYPE_CLASS_TEXT |
-                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        passwordInput.setHint(
+                "Contraseña"
         );
+
+        passwordInput.setHintTextColor(
+                MUTED
+        );
+
+        passwordInput.setTextColor(
+                WHITE
+        );
+
+        passwordInput.setTextSize(
+                16
+        );
+
+        passwordInput.setSingleLine(
+                true
+        );
+
+        passwordInput.setInputType(
+                InputType.TYPE_CLASS_TEXT |
+                InputType.TYPE_TEXT_VARIATION_PASSWORD
+        );
+
         passwordInput.setPadding(
                 dp(16),
                 0,
                 dp(16),
                 0
         );
-        passwordInput.setBackgroundColor(PANEL_2);
 
-        agregar(passwordInput, -1, 56);
+        passwordInput.setBackgroundColor(
+                PANEL_2
+        );
 
-        agregar(separador(22));
+        agregar(
+                passwordInput,
+                -1,
+                56
+        );
 
-        Button loginButton =
-                crearBoton("CONECTAR");
+        agregar(
+                espacio(22)
+        );
 
-        loginButton.setOnClickListener(
+        Button login =
+                boton(
+                        "CONECTAR"
+                );
+
+        login.setOnClickListener(
                 v -> realizarLogin()
         );
 
-        agregar(loginButton, -1, -2);
+        agregar(
+                login,
+                -1,
+                -2
+        );
 
-        agregar(separador(14));
+        agregar(
+                espacio(14)
+        );
 
         statusText =
-                crearTexto(
-                        "Protocolo WoW 3.3.5a pendiente de implementación.",
+                texto(
+                        "Protocolo WoW 3.3.5a pendiente.",
                         13,
                         BLUE
                 );
 
-        agregar(statusText, -1, -2);
-
-        agregar(separador(18));
-
-        Button back =
-                crearBoton("VOLVER");
-
-        back.setOnClickListener(
-                v -> mostrarClienteEncontrado()
+        agregar(
+                statusText,
+                -1,
+                -2
         );
 
-        agregar(back, -1, -2);
+        agregar(
+                espacio(18)
+        );
+
+        Button back =
+                boton(
+                        "VOLVER"
+                );
+
+        back.setOnClickListener(
+                v -> mostrarClienteDetectado()
+        );
+
+        agregar(
+                back,
+                -1,
+                -2
+        );
     }
 
     private void realizarLogin() {
+
         String username =
-                usernameInput.getText()
+                usernameInput
+                        .getText()
                         .toString()
                         .trim();
 
         String password =
-                passwordInput.getText()
+                passwordInput
+                        .getText()
                         .toString();
 
         if (username.isEmpty()) {
-            usernameInput.setError("Introduce el usuario.");
+
+            usernameInput.setError(
+                    "Introduce el usuario."
+            );
+
             usernameInput.requestFocus();
+
             return;
         }
 
         if (password.isEmpty()) {
-            passwordInput.setError("Introduce la contraseña.");
+
+            passwordInput.setError(
+                    "Introduce la contraseña."
+            );
+
             passwordInput.requestFocus();
+
             return;
         }
 
         statusText.setText(
                 "Enviando solicitud de autenticación..."
         );
-        statusText.setTextColor(BLUE);
 
-        nativeLogin(username, password);
+        statusText.setTextColor(
+                BLUE
+        );
+
+        nativeLogin(
+                username,
+                password
+        );
     }
 
     // ============================================================
@@ -761,16 +1201,20 @@ public class MainActivity extends Activity {
     // ============================================================
 
     private DocumentFile obtenerRaizVfs() {
+
         if (wowFolderUri == null) {
             return null;
         }
 
         try {
+
             return DocumentFile.fromTreeUri(
                     this,
                     wowFolderUri
             );
+
         } catch (Exception e) {
+
             return null;
         }
     }
@@ -787,6 +1231,7 @@ public class MainActivity extends Activity {
 
         if (relativePath == null ||
                 relativePath.isEmpty()) {
+
             return current;
         }
 
@@ -794,7 +1239,9 @@ public class MainActivity extends Activity {
                 relativePath
                         .replace('\\', '/');
 
-        while (normalized.startsWith("/")) {
+        while (
+                normalized.startsWith("/")
+        ) {
             normalized =
                     normalized.substring(1);
         }
@@ -803,16 +1250,25 @@ public class MainActivity extends Activity {
                 normalized.split("/");
 
         for (String part : parts) {
+
             if (part.isEmpty()) {
                 continue;
             }
 
-            DocumentFile next = null;
+            DocumentFile next =
+                    null;
 
-            for (DocumentFile child :
-                    current.listFiles()) {
+            for (
+                    DocumentFile child :
+                    current.listFiles()
+            ) {
 
-                if (part.equals(child.getName())) {
+                String name =
+                        child.getName();
+
+                if (name != null &&
+                        part.equals(name)) {
+
                     next = child;
                     break;
                 }
@@ -829,47 +1285,56 @@ public class MainActivity extends Activity {
     }
 
     private boolean vfsExists(
-            String relativePath
+            String path
     ) {
-        return encontrarDocumento(relativePath) != null;
+        return encontrarDocumento(path) != null;
     }
 
     private boolean vfsIsDirectory(
-            String relativePath
+            String path
     ) {
         DocumentFile file =
-                encontrarDocumento(relativePath);
+                encontrarDocumento(path);
 
-        return file != null && file.isDirectory();
+        return file != null &&
+                file.isDirectory();
     }
 
     private List<String> vfsList(
-            String relativePath
+            String path
     ) {
         List<String> result =
                 new ArrayList<>();
 
         DocumentFile directory =
-                encontrarDocumento(relativePath);
+                encontrarDocumento(path);
 
         if (directory == null ||
                 !directory.isDirectory()) {
+
             return result;
         }
 
-        for (DocumentFile file :
-                directory.listFiles()) {
+        for (
+                DocumentFile file :
+                directory.listFiles()
+        ) {
 
-            String name = file.getName();
+            String name =
+                    file.getName();
 
             if (name == null) {
                 continue;
             }
 
             if (file.isDirectory()) {
-                result.add(name + "/");
+                result.add(
+                        name + "/"
+                );
             } else {
-                result.add(name);
+                result.add(
+                        name
+                );
             }
         }
 
@@ -877,34 +1342,40 @@ public class MainActivity extends Activity {
     }
 
     private byte[] vfsReadFile(
-            String relativePath
+            String path
     ) {
         DocumentFile file =
-                encontrarDocumento(relativePath);
+                encontrarDocumento(path);
 
         if (file == null ||
                 !file.isFile()) {
+
             return null;
         }
 
         try {
-            long length = file.length();
 
-            // Protección para no cargar archivos gigantes
-            // completos en memoria durante la prueba.
-            if (length > 16L * 1024L * 1024L) {
+            long length =
+                    file.length();
+
+            if (
+                    length >
+                    16L * 1024L * 1024L
+            ) {
                 return null;
             }
 
-            try (InputStream input =
-                         getContentResolver()
-                                 .openInputStream(
-                                         file.getUri()
-                                 )) {
+            InputStream input =
+                    getContentResolver()
+                            .openInputStream(
+                                    file.getUri()
+                            );
 
-                if (input == null) {
-                    return null;
-                }
+            if (input == null) {
+                return null;
+            }
+
+            try {
 
                 ByteArrayOutputStream output =
                         new ByteArrayOutputStream();
@@ -914,8 +1385,11 @@ public class MainActivity extends Activity {
 
                 int read;
 
-                while ((read =
-                        input.read(buffer)) != -1) {
+                while (
+                        (read =
+                                input.read(buffer))
+                                != -1
+                ) {
 
                     output.write(
                             buffer,
@@ -925,9 +1399,14 @@ public class MainActivity extends Activity {
                 }
 
                 return output.toByteArray();
+
+            } finally {
+
+                input.close();
             }
 
         } catch (Exception e) {
+
             return null;
         }
     }
@@ -941,29 +1420,55 @@ public class MainActivity extends Activity {
             MotionEvent event
     ) {
         try {
+
             int action =
                     event.getActionMasked();
 
-            float x = event.getX();
-            float y = event.getY();
+            float x =
+                    event.getX();
 
-            if (action == MotionEvent.ACTION_DOWN) {
-                nativeTouchDown(x, y);
-            } else if (
-                    action == MotionEvent.ACTION_MOVE
+            float y =
+                    event.getY();
+
+            if (
+                    action ==
+                    MotionEvent.ACTION_DOWN
             ) {
-                nativeTouchMove(x, y);
+
+                nativeTouchDown(
+                        x,
+                        y
+                );
+
             } else if (
-                    action == MotionEvent.ACTION_UP ||
-                    action == MotionEvent.ACTION_CANCEL
+                    action ==
+                    MotionEvent.ACTION_MOVE
             ) {
-                nativeTouchUp(x, y);
+
+                nativeTouchMove(
+                        x,
+                        y
+                );
+
+            } else if (
+                    action ==
+                    MotionEvent.ACTION_UP ||
+                    action ==
+                    MotionEvent.ACTION_CANCEL
+            ) {
+
+                nativeTouchUp(
+                        x,
+                        y
+                );
             }
 
         } catch (Exception ignored) {
         }
 
-        return super.dispatchTouchEvent(event);
+        return super.dispatchTouchEvent(
+                event
+        );
     }
 
     // ============================================================
@@ -971,12 +1476,15 @@ public class MainActivity extends Activity {
     // ============================================================
 
     private int dp(int value) {
+
         float density =
                 getResources()
                         .getDisplayMetrics()
                         .density;
 
-        return Math.round(value * density);
+        return Math.round(
+                value * density
+        );
     }
 
     @Override
