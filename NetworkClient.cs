@@ -9,151 +9,379 @@ public partial class NetworkClient : Node
 {
     private TcpClient? _socket;
     private NetworkStream? _stream;
-    private string _authServer = "127.0.0.1"; 
+    private string _authServer = "127.0.0.1";
     private int _port = 3724;
+
     private Thread? _listenThread;
-    private bool _running = false;
+    private volatile bool _running = false;
+
+    private bool _initialized = false;
 
     public override void _Ready()
     {
-        CargarRealmlist();
+        GD.Print("[Red] NetworkClient iniciado.");
+
+        /*
+         * IMPORTANTE:
+         *
+         * No conectamos al servidor aquí.
+         * No abrimos sockets aquí.
+         * No creamos hilos aquí.
+         *
+         * El cliente solamente prepara la configuración.
+         */
+        try
+        {
+            CargarRealmlist();
+
+            _initialized = true;
+
+            GD.Print("[Red] NetworkClient listo.");
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr("[Red] Error inicializando NetworkClient:");
+            GD.PrintErr(ex.ToString());
+
+            _initialized = false;
+        }
     }
 
     private void CargarRealmlist()
     {
-        // 'user://' es mapeado automáticamente por Godot a la carpeta de almacenamiento segura en Android y PC
         string rutaBase = ProjectSettings.GlobalizePath("user://");
-        string rutaRealmlist = Path.Combine(rutaBase, "realmlist.wtf");
 
-        // Si no existe, creamos uno por defecto para que el usuario pueda editarlo en su dispositivo
+        if (string.IsNullOrEmpty(rutaBase))
+        {
+            GD.PrintErr("[Red] No se pudo determinar user://");
+            return;
+        }
+
+        string rutaRealmlist = Path.Combine(
+            rutaBase,
+            "realmlist.wtf"
+        );
+
+        GD.Print($"[Red] Configuración: {rutaRealmlist}");
+
         if (!File.Exists(rutaRealmlist))
         {
             try
             {
                 Directory.CreateDirectory(rutaBase);
-                File.WriteAllText(rutaRealmlist, "set realmlist 127.0.0.1\n");
-                GD.Print($"[Red] Archivo realmlist.wtf creado por defecto en: {rutaRealmlist}");
-            }
-            catch (Exception e) { GD.PrintErr("No se pudo crear realmlist base: " + e.Message); }
-        }
 
-        if (File.Exists(rutaRealmlist))
-        {
-            try
+                File.WriteAllText(
+                    rutaRealmlist,
+                    "set realmlist 127.0.0.1\n"
+                );
+
+                GD.Print(
+                    "[Red] realmlist.wtf creado correctamente."
+                );
+            }
+            catch (Exception ex)
             {
-                string[] lineas = File.ReadAllLines(rutaRealmlist);
-                foreach (string linea in lineas)
-                {
-                    string limpia = linea.Trim();
-                    if (limpia.ToLower().StartsWith("set realmlist"))
-                    {
-                        // Extraemos la IP o Dominio del servidor
-                        _authServer = limpia.Substring(13).Trim();
-                        GD.Print($"[Red] Realmlist cargado con éxito: {_authServer}");
-                        break;
-                    }
-                }
-            }
-            catch (Exception e) { GD.PrintErr("Error al leer realmlist: " + e.Message); }
-        }
-    }
+                GD.PrintErr(
+                    "[Red] No se pudo crear realmlist.wtf:"
+                );
 
-    public void IniciarSesion(string usuario, string contrasena)
-    {
+                GD.PrintErr(ex.Message);
+
+                return;
+            }
+        }
+
         try
         {
-            GD.Print($"[Red] Conectando a {_authServer}:{_port} para cuenta: {usuario.ToUpper()}");
-            _socket = new TcpClient(_authServer, _port);
-            _stream = _socket.GetStream();
-            _running = true;
+            string[] lineas =
+                File.ReadAllLines(rutaRealmlist);
 
-            _listenThread = new Thread(EscucharServidor);
-            _listenThread.Start();
+            foreach (string linea in lineas)
+            {
+                string limpia = linea.Trim();
 
-            EnviarLoginChallenge(usuario.ToUpper(), contrasena);
+                if (limpia.StartsWith(
+                    "set realmlist",
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    string servidor =
+                        limpia.Substring(13).Trim();
+
+                    if (!string.IsNullOrWhiteSpace(servidor))
+                    {
+                        _authServer = servidor;
+
+                        GD.Print(
+                            $"[Red] Realmlist: {_authServer}"
+                        );
+                    }
+
+                    break;
+                }
+            }
         }
-        catch (Exception e) 
-        { 
-            GD.PrintErr("Error de conexión: " + e.Message); 
+        catch (Exception ex)
+        {
+            GD.PrintErr(
+                "[Red] Error leyendo realmlist:"
+            );
+
+            GD.PrintErr(ex.Message);
         }
     }
 
-    private void EnviarLoginChallenge(string usuario, string contrasena)
+    public void IniciarSesion(
+        string usuario,
+        string contrasena)
     {
-        if (_stream == null) return;
+        if (!_initialized)
+        {
+            GD.PrintErr(
+                "[Red] NetworkClient no está inicializado."
+            );
 
-        byte[] userBytes = Encoding.UTF8.GetBytes(usuario);
-        
-        // Estructura mínima simplificada del paquete de Login para WoW 3.3.5a (WotLK)
-        byte[] packet = new byte[4 + userBytes.Length];
-        
-        packet[0] = 0x00; // Opcode: AUTH_LOGON_CHALLENGE
-        packet[1] = 0x03; // Error/Status placeholder 
-        packet[2] = (byte)(3 + userBytes.Length); // Tamaño del resto del paquete (indicador de longitud)
-        packet[3] = (byte)userBytes.Length;       // Longitud exacta de la cadena del usuario
+            return;
+        }
 
-        Array.Copy(userBytes, 0, packet, 4, userBytes.Length);
-        
-        _stream.Write(packet, 0, packet.Length);
-        GD.Print("[Red] Handshake inicial enviado al AuthServer WoW. Esperando respuesta binaria...");
+        if (string.IsNullOrWhiteSpace(usuario))
+        {
+            GD.PrintErr(
+                "[Red] Usuario vacío."
+            );
+
+            return;
+        }
+
+        try
+        {
+            CerrarConexion();
+
+            GD.Print(
+                $"[Red] Conectando a {_authServer}:{_port}"
+            );
+
+            _socket = new TcpClient();
+
+            _socket.Connect(
+                _authServer,
+                _port
+            );
+
+            _stream = _socket.GetStream();
+
+            _running = true;
+
+            _listenThread =
+                new Thread(EscucharServidor);
+
+            _listenThread.IsBackground = true;
+
+            _listenThread.Start();
+
+            EnviarLoginChallenge(
+                usuario.ToUpperInvariant(),
+                contrasena
+            );
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr(
+                "[Red] Error de conexión:"
+            );
+
+            GD.PrintErr(ex.Message);
+
+            CerrarConexion();
+        }
+    }
+
+    private void EnviarLoginChallenge(
+        string usuario,
+        string contrasena)
+    {
+        if (_stream == null)
+        {
+            GD.PrintErr(
+                "[Red] Stream no disponible."
+            );
+
+            return;
+        }
+
+        try
+        {
+            byte[] userBytes =
+                Encoding.UTF8.GetBytes(usuario);
+
+            byte[] packet =
+                new byte[4 + userBytes.Length];
+
+            packet[0] = 0x00;
+            packet[1] = 0x03;
+
+            packet[2] =
+                (byte)(3 + userBytes.Length);
+
+            packet[3] =
+                (byte)userBytes.Length;
+
+            Array.Copy(
+                userBytes,
+                0,
+                packet,
+                4,
+                userBytes.Length
+            );
+
+            _stream.Write(
+                packet,
+                0,
+                packet.Length
+            );
+
+            GD.Print(
+                "[Red] Handshake enviado."
+            );
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr(
+                "[Red] Error enviando login:"
+            );
+
+            GD.PrintErr(ex.Message);
+        }
     }
 
     private void EscucharServidor()
     {
-        byte[] buffer = new byte[2048]; // Incrementamos el tamaño para paquetes SRP6 grandes
-        while (_running && _stream != null)
+        byte[] buffer = new byte[4096];
+
+        while (_running)
         {
             try
             {
-                int bytesRead = _stream.Read(buffer, 0, buffer.Length);
-                if (bytesRead > 0)
+                if (_stream == null)
+                    break;
+
+                int bytesRead =
+                    _stream.Read(
+                        buffer,
+                        0,
+                        buffer.Length
+                    );
+
+                if (bytesRead <= 0)
+                    break;
+
+                byte[] datos =
+                    new byte[bytesRead];
+
+                Array.Copy(
+                    buffer,
+                    datos,
+                    bytesRead
+                );
+
+                byte opcode =
+                    datos[0];
+
+                Callable.From(
+                    () =>
+                        ProcesarOpcodeEnHiloPrincipal(
+                            opcode,
+                            datos,
+                            datos.Length
+                        )
+                ).CallDeferred();
+            }
+            catch (Exception ex)
+            {
+                if (_running)
                 {
-                    byte opcodeRespuesta = buffer[0];
-                    
-                    // IMPORTANTE: Procesamos la respuesta de forma diferida en el hilo principal de Godot
-                    Callable.From(() => ProcesarOpcodeEnHiloPrincipal(opcodeRespuesta, buffer, bytesRead)).CallDeferred();
+                    GD.PrintErr(
+                        "[Red] Error leyendo servidor:"
+                    );
+
+                    GD.PrintErr(ex.Message);
                 }
-            }
-            catch 
-            { 
-                break; 
+
+                break;
             }
         }
     }
 
-    private void ProcesarOpcodeEnHiloPrincipal(byte opcode, byte[] datos, int tamano)
+    private void ProcesarOpcodeEnHiloPrincipal(
+        byte opcode,
+        byte[] datos,
+        int tamano)
     {
-        GD.Print($"[Red] Paquete procesado de forma segura en el Main Thread. Opcode: {opcode} ({tamano} bytes)");
-        
-        if (opcode == 0x00) // AUTH_LOGON_CHALLENGE Respuesta del Servidor
+        GD.Print(
+            $"[Red] Opcode recibido: {opcode} ({tamano} bytes)"
+        );
+
+        if (opcode == 0x00)
         {
-            // Aquí inicia el cálculo matemático de las claves SRP6 (Generar los valores de B, g, N, s, etc.)
-            GD.Print("[Red] Descomponiendo datos SRP6 del emulador para generar la clave de sesión...");
+            GD.Print(
+                "[Red] AUTH_LOGON_CHALLENGE recibido."
+            );
         }
     }
 
-    public void EnviarCastSpell(int spellId, ulong targetGuid)
+    public void EnviarCastSpell(
+        int spellId,
+        ulong targetGuid)
     {
-        GD.Print($"[Combate] Enviando Opcode CMSG_CAST_SPELL. Hechizo: {spellId}, Objetivo: {targetGuid}");
+        GD.Print(
+            $"[Combate] Spell={spellId} Target={targetGuid}"
+        );
     }
 
-    public void EnviarComandoInterfaz(string stringTokenMenu) => GD.Print($"[Red] Abriendo Interfaz: {stringTokenMenu}");
-    public void EnviarComandoMovimiento(string tipoMovimiento) => GD.Print($"[Red] Sincronizando Posición: {tipoMovimiento}");
+    public void EnviarComandoInterfaz(
+        string stringTokenMenu)
+    {
+        GD.Print(
+            $"[Red] Interfaz: {stringTokenMenu}"
+        );
+    }
+
+    public void EnviarComandoMovimiento(
+        string tipoMovimiento)
+    {
+        GD.Print(
+            $"[Red] Movimiento: {tipoMovimiento}"
+        );
+    }
+
+    public void CerrarConexion()
+    {
+        _running = false;
+
+        try
+        {
+            _stream?.Close();
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            _socket?.Close();
+        }
+        catch
+        {
+        }
+
+        _stream = null;
+        _socket = null;
+    }
 
     public override void _Notification(int what)
     {
-        // En Godot 4.x se usan constantes enteras para las notificaciones de cierre
-        if (what == NotificationWMCloseRequest || what == 1006) // 1006 equivale al antiguo NotificationCrash
+        if (what == NotificationWMCloseRequest)
         {
-            _running = false;
-            _stream?.Close();
-            _socket?.Close();
-            
-            // Es más seguro dejar que el hilo muera de forma natural al cerrar el stream que forzar un Abort
-            if (_listenThread != null && _listenThread.IsAlive)
-            {
-                _listenThread.Join(500); 
-            }
+            CerrarConexion();
         }
     }
 }
