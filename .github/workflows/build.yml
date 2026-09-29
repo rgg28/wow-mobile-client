@@ -91,7 +91,7 @@ jobs:
           echo "Android SDK preparado."
 
       # ============================================================
-      # 5. VERIFICAR ARCHIVOS DEL PROYECTO
+      # 5. VERIFICAR ARCHIVOS
       # ============================================================
       - name: Verificar archivos principales
         shell: bash
@@ -140,35 +140,92 @@ jobs:
           "$GODOT" --version
 
       # ============================================================
-      # 7. EXPORT TEMPLATES ANDROID
+      # 7. TEMPLATES GODOT 4.2.1 MONO
       # ============================================================
       - name: Preparar templates de exportacion Android
         shell: bash
         run: |
           set -e
 
-          GODOT="./Godot_v4.2.1-stable_mono_linux.x86_64"
+          echo "=========================================="
+          echo " TEMPLATES GODOT 4.2.1 MONO"
+          echo "=========================================="
 
-          mkdir -p "$HOME/.local/share/godot/export_templates/4.2.1.stable"
+          TEMPLATE_DIR="$HOME/.local/share/godot/export_templates/4.2.1.stable.mono"
 
-          TEMPLATE_URL="https://github.com/godotengine/godot/releases/download/4.2.1-stable/Godot_v4.2.1-stable_mono_export_templates.tpz"
+          rm -rf "$TEMPLATE_DIR"
+          mkdir -p "$TEMPLATE_DIR"
+
+          echo ""
+          echo "Directorio esperado por Godot:"
+          echo "$TEMPLATE_DIR"
+
+          echo ""
+          echo "Descargando templates Mono..."
 
           wget -q \
-            "$TEMPLATE_URL" \
+            "https://github.com/godotengine/godot/releases/download/4.2.1-stable/Godot_v4.2.1-stable_mono_export_templates.tpz" \
             -O templates.tpz
 
+          echo ""
+          echo "Extrayendo templates..."
+
+          rm -rf templates_extract
           mkdir -p templates_extract
 
           unzip -q templates.tpz -d templates_extract
 
-          cp -r \
-            templates_extract/templates/. \
-            "$HOME/.local/share/godot/export_templates/4.2.1.stable/"
+          echo ""
+          echo "Contenido descargado:"
+          find templates_extract \
+            -type f \
+            -printf '%p\n' | sort
+
+          echo ""
+          echo "Copiando templates..."
+
+          if [ -d "templates_extract/templates" ]; then
+            cp -a \
+              templates_extract/templates/. \
+              "$TEMPLATE_DIR/"
+          else
+            echo "ERROR: No se encontro la carpeta templates dentro del TPZ."
+            exit 1
+          fi
+
+          echo ""
+          echo "=========================================="
+          echo " TEMPLATES INSTALADOS"
+          echo "=========================================="
+
+          find "$TEMPLATE_DIR" \
+            -maxdepth 2 \
+            -type f \
+            -printf '%p\n' | sort
+
+          echo ""
+          echo "=========================================="
+          echo " VERIFICACION ANDROID"
+          echo "=========================================="
+
+          if [ ! -f "$TEMPLATE_DIR/android_debug.apk" ]; then
+            echo "ERROR: Falta android_debug.apk"
+            exit 1
+          fi
+
+          if [ ! -f "$TEMPLATE_DIR/android_release.apk" ]; then
+            echo "ERROR: Falta android_release.apk"
+            exit 1
+          fi
+
+          echo ""
+          echo "android_debug.apk: OK"
+          echo "android_release.apk: OK"
+          echo ""
+          echo "Templates Android Mono preparados correctamente."
 
           rm -rf templates_extract
           rm -f templates.tpz
-
-          echo "Templates Android preparados."
 
       # ============================================================
       # 8. RESTORE C#
@@ -221,7 +278,7 @@ jobs:
             -printf '%p\n' | sort
 
       # ============================================================
-      # 10. VERIFICAR ASSEMBLIES
+      # 10. VERIFICAR ASSEMBLIES C#
       # ============================================================
       - name: Verificar assemblies C#
         shell: bash
@@ -370,6 +427,8 @@ jobs:
           echo " EXPORTANDO APK"
           echo "=========================================="
 
+          rm -f "build/WoW.apk"
+
           timeout 300 "$GODOT" \
             --headless \
             --path . \
@@ -377,9 +436,18 @@ jobs:
             "build/WoW.apk"
 
           echo ""
-          echo "APK generado:"
+          echo "=========================================="
+          echo " VERIFICANDO APK"
+          echo "=========================================="
 
-          ls -lh build/WoW.apk
+          if [ ! -f "build/WoW.apk" ]; then
+            echo "ERROR: Godot termino pero no genero el APK."
+            exit 1
+          fi
+
+          echo ""
+          echo "APK generado correctamente:"
+          ls -lh "build/WoW.apk"
 
       # ============================================================
       # 16. FIRMAR APK
