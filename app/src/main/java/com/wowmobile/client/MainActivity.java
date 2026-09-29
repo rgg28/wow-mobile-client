@@ -1,790 +1,688 @@
 package com.wowmobile.client;
 
 import android.app.Activity;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.net.Uri;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.view.Gravity;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.Space;
 import android.widget.TextView;
-import android.content.Intent;
-import android.net.Uri;
-import android.graphics.Color;
+import android.widget.Toast;
+
+import androidx.documentfile.provider.DocumentFile;
 
 public class MainActivity extends Activity {
+
+    private static final int REQUEST_WOW_FOLDER = 1001;
+
+    private LinearLayout root;
+    private LinearLayout content;
+
+    private TextView title;
+    private TextView status;
+
+    private Uri wowFolderUri;
+
+    private EditText usernameInput;
+    private EditText passwordInput;
+
+    private Button continueButton;
+    private Button loginButton;
+
+    private static final int BG = Color.rgb(12, 14, 18);
+    private static final int PANEL = Color.rgb(24, 27, 34);
+    private static final int PANEL2 = Color.rgb(31, 35, 44);
+    private static final int TEXT = Color.rgb(235, 235, 235);
+    private static final int SUBTEXT = Color.rgb(160, 165, 175);
+    private static final int ACCENT = Color.rgb(190, 150, 60);
 
     static {
         System.loadLibrary("wowmobile");
     }
 
-    private LinearLayout root;
-
-    private TextView status;
-
-    private EditText username;
-    private EditText password;
-
-    private Button connectButton;
-
-    private LinearLayout characterPanel;
-
-    private boolean modifierL1 = false;
-    private boolean modifierR1 = false;
-
-    private boolean worldControlsVisible = false;
-
-    private float joystickX = 0.0f;
-    private float joystickY = 0.0f;
-
-    private int selectedCharacter = -1;
-
-    private static final int PICK_WOW_FOLDER = 1001;
-
     private native void nativeInit();
-
     private native void nativeSetWowFolder(String path);
-
-    private native void nativeLogin(
-            String username,
-            String password
-    );
-
-    private native void nativeSelectCharacter(
-            int index
-    );
-
-    private native void nativeTouch(
-            int action,
-            float x,
-            float y
-    );
-
-    private native void nativeJoystick(
-            float x,
-            float y
-    );
-
-    private native void nativeSpell(
-            int spellId
-    );
-
+    private native void nativeLogin(String username, String password);
+    private native void nativeSelectCharacter(int index);
+    private native void nativeTouch(int action, float x, float y);
+    private native void nativeJoystick(float x, float y);
+    private native void nativeSpell(int spellId);
     private native void nativeJump();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        getWindow().setStatusBarColor(Color.BLACK);
-        getWindow().setNavigationBarColor(Color.BLACK);
-
         nativeInit();
 
-        mostrarSeleccionCarpeta();
+        crearInterfazBase();
+
+        Uri saved = obtenerCarpetaGuardada();
+
+        if (saved != null) {
+            wowFolderUri = saved;
+
+            if (validarCliente(saved)) {
+                mostrarClienteEncontrado(saved);
+            } else {
+                mostrarSeleccionCliente();
+            }
+        } else {
+            mostrarSeleccionCliente();
+        }
     }
 
-    private void mostrarSeleccionCarpeta() {
+    private void crearInterfazBase() {
 
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setGravity(Gravity.CENTER);
-        root.setPadding(60, 40, 60, 40);
-
-        root.setBackgroundColor(Color.rgb(15, 15, 15));
-
-        TextView title = new TextView(this);
-
-        title.setText("WORLD OF WARCRAFT 3.3.5a");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(26);
-        title.setGravity(Gravity.CENTER);
-
-        root.addView(
-                title,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        100
-                )
-        );
-
-        TextView info = new TextView(this);
-
-        info.setText(
-                "Selecciona la carpeta donde tienes los datos extraídos del cliente."
-        );
-
-        info.setTextColor(Color.LTGRAY);
-        info.setTextSize(16);
-        info.setGravity(Gravity.CENTER);
-
-        root.addView(
-                info,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        100
-                )
-        );
-
-        Button select = new Button(this);
-
-        select.setText("SELECCIONAR CARPETA WOW");
-
-        select.setOnClickListener(
-                v -> abrirSelectorCarpeta()
-        );
-
-        root.addView(
-                select,
-                new LinearLayout.LayoutParams(
-                        500,
-                        80
-                )
-        );
+        root.setBackgroundColor(BG);
 
         setContentView(root);
     }
 
+    private void limpiar() {
+        root.removeAllViews();
+    }
+
+    private TextView texto(String text, float size) {
+
+        TextView v = new TextView(this);
+
+        v.setText(text);
+        v.setTextColor(TEXT);
+        v.setTextSize(size);
+        v.setGravity(Gravity.CENTER);
+
+        return v;
+    }
+
+    private TextView textoSecundario(String text) {
+
+        TextView v = new TextView(this);
+
+        v.setText(text);
+        v.setTextColor(SUBTEXT);
+        v.setTextSize(15);
+        v.setGravity(Gravity.CENTER);
+
+        v.setPadding(20, 8, 20, 8);
+
+        return v;
+    }
+
+    private Button boton(String text) {
+
+        Button b = new Button(this);
+
+        b.setText(text);
+        b.setTextColor(TEXT);
+        b.setTextSize(15);
+        b.setAllCaps(false);
+
+        b.setBackgroundColor(PANEL2);
+
+        return b;
+    }
+
+    private Space espacio(int dp) {
+
+        Space s = new Space(this);
+
+        s.setLayoutParams(
+                new LinearLayout.LayoutParams(
+                        1,
+                        dp
+                )
+        );
+
+        return s;
+    }
+
+    private LinearLayout panel() {
+
+        LinearLayout p = new LinearLayout(this);
+
+        p.setOrientation(LinearLayout.VERTICAL);
+        p.setGravity(Gravity.CENTER);
+        p.setPadding(35, 30, 35, 30);
+        p.setBackgroundColor(PANEL);
+
+        return p;
+    }
+
+    // ============================================================
+    // SELECCION DEL CLIENTE
+    // ============================================================
+
+    private void mostrarSeleccionCliente() {
+
+        limpiar();
+
+        LinearLayout p = panel();
+
+        TextView t = texto("WoW Mobile Client", 28);
+        t.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+
+        p.addView(t);
+
+        p.addView(espacio(12));
+
+        p.addView(textoSecundario(
+                "Selecciona la carpeta donde se encuentran los archivos extraídos del cliente WoW 3.3.5a."
+        ));
+
+        p.addView(espacio(20));
+
+        Button select = boton("Seleccionar carpeta del cliente");
+
+        select.setOnClickListener(v -> abrirSelectorCarpeta());
+
+        p.addView(select);
+
+        p.addView(espacio(15));
+
+        status = textoSecundario(
+                "Ningún cliente seleccionado."
+        );
+
+        p.addView(status);
+
+        root.addView(
+                p,
+                new LinearLayout.LayoutParams(
+                        500,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+        );
+    }
+
     private void abrirSelectorCarpeta() {
 
-        Intent intent =
-                new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
 
         intent.addFlags(
                 Intent.FLAG_GRANT_READ_URI_PERMISSION |
                 Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION |
-                Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
         );
 
-        startActivityForResult(
-                intent,
-                PICK_WOW_FOLDER
-        );
+        startActivityForResult(intent, REQUEST_WOW_FOLDER);
     }
 
     @Override
     protected void onActivityResult(
             int requestCode,
             int resultCode,
-            Intent data) {
+            Intent data
+    ) {
 
-        super.onActivityResult(
-                requestCode,
-                resultCode,
-                data
-        );
+        super.onActivityResult(requestCode, resultCode, data);
 
-        if (
-                requestCode == PICK_WOW_FOLDER &&
-                resultCode == RESULT_OK &&
-                data != null
-        ) {
+        if (requestCode != REQUEST_WOW_FOLDER) {
+            return;
+        }
 
-            Uri uri = data.getData();
+        if (resultCode != RESULT_OK || data == null) {
+            mostrarSeleccionCliente();
+            return;
+        }
 
-            if (uri == null)
-                return;
+        Uri uri = data.getData();
 
-            try {
+        if (uri == null) {
+            mostrarSeleccionCliente();
+            return;
+        }
 
-                getContentResolver()
-                        .takePersistableUriPermission(
-                                uri,
-                                Intent.FLAG_GRANT_READ_URI_PERMISSION
-                        );
+        try {
 
-            } catch (Exception ignored) {
-            }
+            int flags =
+                    data.getFlags() &
+                    (Intent.FLAG_GRANT_READ_URI_PERMISSION |
+                     Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
 
-            nativeSetWowFolder(
-                    uri.toString()
+            getContentResolver().takePersistableUriPermission(
+                    uri,
+                    flags & Intent.FLAG_GRANT_READ_URI_PERMISSION
             );
 
-            mostrarLogin();
+        } catch (Exception ignored) {
+        }
+
+        wowFolderUri = uri;
+
+        guardarCarpeta(uri);
+
+        if (validarCliente(uri)) {
+            mostrarClienteEncontrado(uri);
+        } else {
+            mostrarClienteNoValido(uri);
         }
     }
+
+    // ============================================================
+    // VALIDACION DEL CLIENTE
+    // ============================================================
+
+    private boolean validarCliente(Uri uri) {
+
+        DocumentFile rootFolder =
+                DocumentFile.fromTreeUri(this, uri);
+
+        if (rootFolder == null || !rootFolder.isDirectory()) {
+            return false;
+        }
+
+        boolean cameras = false;
+        boolean character = false;
+        boolean creatures = false;
+
+        DocumentFile[] files = rootFolder.listFiles();
+
+        for (DocumentFile file : files) {
+
+            String name = file.getName();
+
+            if (name == null) {
+                continue;
+            }
+
+            if (name.equalsIgnoreCase("cameras") && file.isDirectory()) {
+                cameras = true;
+            }
+
+            if (name.equalsIgnoreCase("character") && file.isDirectory()) {
+                character = true;
+            }
+
+            if (name.equalsIgnoreCase("creatures") && file.isDirectory()) {
+                creatures = true;
+            }
+        }
+
+        return cameras || character || creatures;
+    }
+
+    private boolean existeCarpeta(Uri uri, String nombre) {
+
+        DocumentFile rootFolder =
+                DocumentFile.fromTreeUri(this, uri);
+
+        if (rootFolder == null) {
+            return false;
+        }
+
+        for (DocumentFile file : rootFolder.listFiles()) {
+
+            String name = file.getName();
+
+            if (name != null &&
+                    name.equalsIgnoreCase(nombre) &&
+                    file.isDirectory()) {
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void mostrarClienteNoValido(Uri uri) {
+
+        limpiar();
+
+        LinearLayout p = panel();
+
+        TextView t = texto("Cliente no reconocido", 25);
+        t.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+
+        p.addView(t);
+
+        p.addView(espacio(15));
+
+        p.addView(textoSecundario(
+                "La carpeta seleccionada no contiene una estructura reconocible del cliente."
+        ));
+
+        p.addView(espacio(15));
+
+        p.addView(textoSecundario(
+                "Selecciona la carpeta raíz que contiene carpetas como cameras, character, creatures, etc."
+        ));
+
+        p.addView(espacio(20));
+
+        Button retry = boton("Seleccionar otra carpeta");
+
+        retry.setOnClickListener(v -> abrirSelectorCarpeta());
+
+        p.addView(retry);
+
+        root.addView(
+                p,
+                new LinearLayout.LayoutParams(
+                        550,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+        );
+    }
+
+    // ============================================================
+    // CLIENTE ENCONTRADO
+    // ============================================================
+
+    private void mostrarClienteEncontrado(Uri uri) {
+
+        limpiar();
+
+        LinearLayout p = panel();
+
+        TextView t = texto("Cliente WoW encontrado", 26);
+        t.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+
+        p.addView(t);
+
+        p.addView(espacio(15));
+
+        p.addView(textoSecundario(
+                "La carpeta seleccionada contiene archivos del cliente."
+        ));
+
+        p.addView(espacio(15));
+
+        agregarResultado(
+                p,
+                "cameras/",
+                existeCarpeta(uri, "cameras")
+        );
+
+        agregarResultado(
+                p,
+                "character/",
+                existeCarpeta(uri, "character")
+        );
+
+        agregarResultado(
+                p,
+                "creatures/",
+                existeCarpeta(uri, "creatures")
+        );
+
+        p.addView(espacio(20));
+
+        continueButton = boton("CONTINUAR AL LOGIN");
+
+        continueButton.setOnClickListener(
+                v -> mostrarLogin()
+        );
+
+        p.addView(continueButton);
+
+        p.addView(espacio(10));
+
+        Button change = boton("Cambiar carpeta");
+
+        change.setOnClickListener(
+                v -> abrirSelectorCarpeta()
+        );
+
+        p.addView(change);
+
+        root.addView(
+                p,
+                new LinearLayout.LayoutParams(
+                        550,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+        );
+
+        try {
+            nativeSetWowFolder(uri.toString());
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void agregarResultado(
+            LinearLayout parent,
+            String nombre,
+            boolean encontrado
+    ) {
+
+        TextView v = textoSecundario(
+                (encontrado ? "✓ " : "○ ") + nombre
+        );
+
+        v.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
+
+        parent.addView(v);
+    }
+
+    // ============================================================
+    // LOGIN
+    // ============================================================
 
     private void mostrarLogin() {
 
-        root = new LinearLayout(this);
+        limpiar();
 
-        root.setOrientation(
-                LinearLayout.VERTICAL
-        );
+        LinearLayout p = panel();
 
-        root.setGravity(
-                Gravity.CENTER
-        );
+        TextView t = texto("Iniciar sesión", 28);
+        t.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
 
-        root.setPadding(
-                60,
-                40,
-                60,
-                40
-        );
+        p.addView(t);
 
-        root.setBackgroundColor(
-                Color.rgb(10, 10, 10)
-        );
+        p.addView(espacio(8));
 
-        TextView title = new TextView(this);
+        p.addView(textoSecundario(
+                "WoW 3.3.5a"
+        ));
 
-        title.setText(
-                "WORLD OF WARCRAFT 3.3.5a"
-        );
+        p.addView(espacio(20));
 
-        title.setTextColor(
-                Color.WHITE
-        );
+        TextView userLabel = textoSecundario("Usuario");
 
-        title.setTextSize(
-                26
-        );
+        userLabel.setGravity(Gravity.LEFT);
 
-        title.setGravity(
-                Gravity.CENTER
-        );
+        p.addView(userLabel);
 
-        root.addView(
-                title,
+        usernameInput = new EditText(this);
+
+        usernameInput.setSingleLine(true);
+        usernameInput.setTextColor(TEXT);
+        usernameInput.setHintTextColor(SUBTEXT);
+        usernameInput.setHint("Nombre de usuario");
+        usernameInput.setTextSize(17);
+        usernameInput.setPadding(18, 10, 18, 10);
+
+        p.addView(
+                usernameInput,
                 new LinearLayout.LayoutParams(
-                        500,
-                        70
+                        450,
+                        60
                 )
         );
 
-        username = new EditText(this);
+        p.addView(espacio(10));
 
-        username.setHint(
-                "Nombre de cuenta"
+        TextView passLabel = textoSecundario("Contraseña");
+
+        passLabel.setGravity(Gravity.LEFT);
+
+        p.addView(passLabel);
+
+        passwordInput = new EditText(this);
+
+        passwordInput.setSingleLine(true);
+        passwordInput.setTextColor(TEXT);
+        passwordInput.setHintTextColor(SUBTEXT);
+        passwordInput.setHint("Contraseña");
+        passwordInput.setTextSize(17);
+        passwordInput.setInputType(
+                android.text.InputType.TYPE_CLASS_TEXT |
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
         );
 
-        username.setSingleLine(true);
+        passwordInput.setPadding(18, 10, 18, 10);
 
-        root.addView(
-                username,
+        p.addView(
+                passwordInput,
                 new LinearLayout.LayoutParams(
-                        500,
-                        70
+                        450,
+                        60
                 )
         );
 
-        password = new EditText(this);
+        p.addView(espacio(20));
 
-        password.setHint(
-                "Contraseña"
+        loginButton = boton("CONECTAR");
+
+        loginButton.setOnClickListener(
+                v -> intentarLogin()
         );
 
-        password.setSingleLine(true);
-
-        password.setInputType(
-                0x00000081
-        );
-
-        root.addView(
-                password,
+        p.addView(
+                loginButton,
                 new LinearLayout.LayoutParams(
-                        500,
-                        70
+                        300,
+                        60
                 )
         );
 
-        connectButton = new Button(this);
+        p.addView(espacio(12));
 
-        connectButton.setText(
-                "CONECTAR"
+        status = textoSecundario(
+                "Estado: cliente cargado. Sin conexión todavía."
         );
 
-        connectButton.setOnClickListener(
-                v -> procesarLogin()
+        p.addView(status);
+
+        p.addView(espacio(10));
+
+        Button back = boton("Volver");
+
+        back.setOnClickListener(
+                v -> mostrarClienteEncontrado(wowFolderUri)
         );
+
+        p.addView(back);
 
         root.addView(
-                connectButton,
+                p,
                 new LinearLayout.LayoutParams(
-                        500,
-                        80
+                        600,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
                 )
         );
-
-        status = new TextView(this);
-
-        status.setText(
-                "Esperando conexión..."
-        );
-
-        status.setTextColor(
-                Color.LTGRAY
-        );
-
-        status.setGravity(
-                Gravity.CENTER
-        );
-
-        root.addView(
-                status,
-                new LinearLayout.LayoutParams(
-                        500,
-                        70
-                )
-        );
-
-        setContentView(root);
     }
 
-    private void procesarLogin() {
+    private void intentarLogin() {
 
-        String user =
-                username.getText()
-                        .toString()
-                        .trim();
+        String username =
+                usernameInput.getText().toString().trim();
 
-        String pass =
-                password.getText()
-                        .toString();
+        String password =
+                passwordInput.getText().toString();
 
-        if (user.isEmpty() ||
-            pass.isEmpty()) {
+        if (username.isEmpty()) {
 
-            status.setText(
-                    "Introduce usuario y contraseña."
-            );
+            usernameInput.requestFocus();
+
+            Toast.makeText(
+                    this,
+                    "Introduce el usuario.",
+                    Toast.LENGTH_SHORT
+            ).show();
 
             return;
         }
 
-        status.setText(
-                "Conectando..."
-        );
+        if (password.isEmpty()) {
 
-        connectButton.setEnabled(
-                false
-        );
+            passwordInput.requestFocus();
 
-        nativeLogin(
-                user,
-                pass
-        );
-    }
+            Toast.makeText(
+                    this,
+                    "Introduce la contraseña.",
+                    Toast.LENGTH_SHORT
+            ).show();
 
-    public void mostrarPersonajes(
-            String[] personajes
-    ) {
-
-        runOnUiThread(() -> {
-
-            root = new LinearLayout(
-                    MainActivity.this
-            );
-
-            root.setOrientation(
-                    LinearLayout.VERTICAL
-            );
-
-            root.setGravity(
-                    Gravity.CENTER
-            );
-
-            root.setPadding(
-                    40,
-                    30,
-                    40,
-                    30
-            );
-
-            root.setBackgroundColor(
-                    Color.rgb(10, 10, 10)
-            );
-
-            TextView title =
-                    new TextView(
-                            MainActivity.this
-                    );
-
-            title.setText(
-                    "SELECCIONA UN PERSONAJE"
-            );
-
-            title.setTextColor(
-                    Color.WHITE
-            );
-
-            title.setTextSize(
-                    22
-            );
-
-            title.setGravity(
-                    Gravity.CENTER
-            );
-
-            root.addView(
-                    title,
-                    new LinearLayout.LayoutParams(
-                            600,
-                            70
-                    )
-            );
-
-            for (int i = 0;
-                 i < personajes.length;
-                 i++) {
-
-                final int index = i;
-
-                Button character =
-                        new Button(
-                                MainActivity.this
-                        );
-
-                character.setText(
-                        personajes[i]
-                );
-
-                character.setOnClickListener(
-                        v -> {
-
-                            selectedCharacter =
-                                    index;
-
-                            nativeSelectCharacter(
-                                    index
-                            );
-
-                            mostrarControlesJuego();
-                        }
-                );
-
-                root.addView(
-                        character,
-                        new LinearLayout.LayoutParams(
-                                600,
-                                75
-                        )
-                );
-            }
-
-            setContentView(root);
-        });
-    }
-
-    private void mostrarControlesJuego() {
-
-        worldControlsVisible = true;
-
-        root = new LinearLayout(this);
-
-        root.setOrientation(
-                LinearLayout.VERTICAL
-        );
-
-        root.setBackgroundColor(
-                Color.TRANSPARENT
-        );
-
-        status = new TextView(this);
-
-        status.setText(
-                "Entrando al mundo..."
-        );
-
-        status.setTextColor(
-                Color.WHITE
-        );
-
-        status.setTextSize(
-                18
-        );
-
-        status.setGravity(
-                Gravity.CENTER
-        );
-
-        root.addView(
-                status,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        70
-                )
-        );
-
-        LinearLayout modifiers =
-                new LinearLayout(this);
-
-        modifiers.setOrientation(
-                LinearLayout.HORIZONTAL
-        );
-
-        Button l1 =
-                crearBoton("L1");
-
-        Button r1 =
-                crearBoton("R1");
-
-        l1.setOnTouchListener(
-                (v, event) -> {
-
-                    if (event.getAction() ==
-                            MotionEvent.ACTION_DOWN) {
-
-                        modifierL1 = true;
-                        actualizarBotones();
-                    }
-
-                    if (event.getAction() ==
-                            MotionEvent.ACTION_UP ||
-                        event.getAction() ==
-                            MotionEvent.ACTION_CANCEL) {
-
-                        modifierL1 = false;
-                        actualizarBotones();
-                    }
-
-                    return true;
-                }
-        );
-
-        r1.setOnTouchListener(
-                (v, event) -> {
-
-                    if (event.getAction() ==
-                            MotionEvent.ACTION_DOWN) {
-
-                        modifierR1 = true;
-                        actualizarBotones();
-                    }
-
-                    if (event.getAction() ==
-                            MotionEvent.ACTION_UP ||
-                        event.getAction() ==
-                            MotionEvent.ACTION_CANCEL) {
-
-                        modifierR1 = false;
-                        actualizarBotones();
-                    }
-
-                    return true;
-                }
-        );
-
-        modifiers.addView(
-                l1,
-                new LinearLayout.LayoutParams(
-                        200,
-                        80
-                )
-        );
-
-        modifiers.addView(
-                r1,
-                new LinearLayout.LayoutParams(
-                        200,
-                        80
-                )
-        );
-
-        root.addView(
-                modifiers
-        );
-
-        LinearLayout buttons =
-                new LinearLayout(this);
-
-        buttons.setOrientation(
-                LinearLayout.HORIZONTAL
-        );
-
-        Button x =
-                crearBoton("Habilidad 1");
-
-        Button y =
-                crearBoton("Habilidad 2");
-
-        Button b =
-                crearBoton("Habilidad 3");
-
-        Button a =
-                crearBoton("Saltar");
-
-        x.setOnClickListener(
-                v -> ejecutarBoton(1)
-        );
-
-        y.setOnClickListener(
-                v -> ejecutarBoton(2)
-        );
-
-        b.setOnClickListener(
-                v -> ejecutarBoton(3)
-        );
-
-        a.setOnClickListener(
-                v -> ejecutarBoton(4)
-        );
-
-        buttons.addView(
-                x,
-                new LinearLayout.LayoutParams(
-                        180,
-                        100
-                )
-        );
-
-        buttons.addView(
-                y,
-                new LinearLayout.LayoutParams(
-                        180,
-                        100
-                )
-        );
-
-        buttons.addView(
-                b,
-                new LinearLayout.LayoutParams(
-                        180,
-                        100
-                )
-        );
-
-        buttons.addView(
-                a,
-                new LinearLayout.LayoutParams(
-                        180,
-                        100
-                )
-        );
-
-        root.addView(
-                buttons
-        );
-
-        setContentView(root);
-
-        status.setText(
-                "Controles preparados."
-        );
-    }
-
-    private Button crearBoton(
-            String texto
-    ) {
-
-        Button button =
-                new Button(this);
-
-        button.setText(
-                texto
-        );
-
-        return button;
-    }
-
-    private void actualizarBotones() {
-
-        if (status == null)
-            return;
-
-        if (modifierL1) {
-
-            status.setText(
-                    "Set L1 Activo"
-            );
-
-        } else if (modifierR1) {
-
-            status.setText(
-                    "Set R1 Activo"
-            );
-
-        } else {
-
-            status.setText(
-                    "Set Normal Activo"
-            );
-        }
-    }
-
-    private void ejecutarBoton(
-            int boton
-    ) {
-
-        if (
-                boton == 4 &&
-                !modifierL1 &&
-                !modifierR1
-        ) {
-
-            nativeJump();
             return;
         }
 
-        int spell = 0;
+        /*
+         * IMPORTANTE:
+         *
+         * Todavía NO existe la implementación real del protocolo
+         * de autenticación WoW 3.3.5a.
+         *
+         * Por eso no cambiamos de pantalla ni fingimos conexión.
+         */
 
-        if (!modifierL1 &&
-            !modifierR1) {
+        status.setText(
+                "Estado: autenticación WoW todavía no implementada."
+        );
 
-            if (boton == 1)
-                spell = 47450;
-
-            if (boton == 2)
-                spell = 47471;
-
-            if (boton == 3)
-                spell = 47465;
-
-        } else if (
-                modifierL1 &&
-                !modifierR1
-        ) {
-
-            if (boton == 1)
-                spell = 11578;
-
-            if (boton == 2)
-                spell = 20252;
-
-            if (boton == 3)
-                spell = 48068;
-
-            if (boton == 4)
-                spell = 54729;
-
-        } else if (
-                !modifierL1 &&
-                modifierR1
-        ) {
-
-            if (boton == 1)
-                spell = 48156;
-
-            if (boton == 2)
-                spell = 48123;
-
-            if (boton == 3)
-                spell = 48160;
-
-            if (boton == 4)
-                spell = 33010;
+        try {
+            nativeLogin(username, password);
+        } catch (Exception ignored) {
         }
-
-        if (spell != 0)
-            nativeSpell(spell);
     }
 
-    @Override
-    public boolean onTouchEvent(
-            MotionEvent event
-    ) {
+    // ============================================================
+    // CARPETA GUARDADA
+    // ============================================================
 
-        if (worldControlsVisible) {
+    private void guardarCarpeta(Uri uri) {
 
-            nativeTouch(
-                    event.getActionMasked(),
-                    event.getX(),
-                    event.getY()
-            );
+        SharedPreferences prefs =
+                getSharedPreferences(
+                        "wow_client",
+                        MODE_PRIVATE
+                );
+
+        prefs.edit()
+                .putString(
+                        "wow_folder_uri",
+                        uri.toString()
+                )
+                .apply();
+    }
+
+    private Uri obtenerCarpetaGuardada() {
+
+        SharedPreferences prefs =
+                getSharedPreferences(
+                        "wow_client",
+                        MODE_PRIVATE
+                );
+
+        String value =
+                prefs.getString(
+                        "wow_folder_uri",
+                        null
+                );
+
+        if (value == null || value.isEmpty()) {
+            return null;
         }
 
-        return true;
+        try {
+            return Uri.parse(value);
+        } catch (Exception e) {
+            return null;
+        }
     }
 }
