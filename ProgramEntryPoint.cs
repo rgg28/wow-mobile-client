@@ -1,130 +1,123 @@
 using Godot;
 using System;
-using System.IO;
 
 public partial class ProgramEntryPoint : Node
 {
-    private string _rutaAssets = "";
+    private MobileUI? _mobileUI;
+    private CanvasLayer? _diagnosticLayer;
 
     public override void _Ready()
     {
-        GD.Print("[WoW] Inicializando cliente móvil 3.3.5a...");
+        GD.Print("========================================");
+        GD.Print("[WoW] WoW Mobile Client");
+        GD.Print("[WoW] Inicializando Android client...");
+        GD.Print("========================================");
 
-        // 1. Solicitar permisos de almacenamiento si estamos en Android
-        if (OS.GetName() == "Android")
+        try
         {
-            OS.RequestPermissions();
+            CrearInterfazPrincipal();
+
+            GD.Print("[WoW] Bootstrap completado correctamente.");
         }
-
-        // 2. Construir la ruta exacta definida: Almacenamiento interno/Documents/WoW335Android/
-        string rutaDocuments = OS.GetSystemDir(OS.SystemDir.Documents);
-        _rutaAssets = Path.Combine(rutaDocuments, "WoW335Android");
-
-        GD.Print($"[WoW] Buscando los datos del cliente en: {_rutaAssets}");
-
-        // 3. Validar si la carpeta existe
-        if (Directory.Exists(_rutaAssets))
+        catch (Exception ex)
         {
-            GD.Print("[WoW] ¡Directorio WoW335Android detectado con éxito!");
-            VerificarCarpetasInternas();
-        }
-        else
-        {
-            GD.PrintErr($"[WoW] [ERROR] No se encontró la carpeta en: {_rutaAssets}");
-            
-            try
-            {
-                Directory.CreateDirectory(_rutaAssets);
-                GD.Print($"[WoW] Se ha creado la carpeta vacía en: {_rutaAssets}");
-            }
-            catch (Exception e) 
-            { 
-                GD.PrintErr($"[WoW] No se pudo crear el directorio: {e.Message}"); 
-            }
+            GD.PrintErr("[WoW] ERROR DURANTE EL ARRANQUE");
+            GD.PrintErr(ex.ToString());
 
-            MostrarMensajeErrorRuta();
+            MostrarErrorFatal(ex);
         }
     }
 
-    private void VerificarCarpetasInternas()
+    private void CrearInterfazPrincipal()
     {
-        string carpetaTexturas = Path.Combine(_rutaAssets, "Textures");
-        string carpetaWorld = Path.Combine(_rutaAssets, "World");
+        Node root = GetTree().Root;
 
-        if (Directory.Exists(carpetaTexturas) && Directory.Exists(carpetaWorld))
-        {
-            GD.Print("[WoW] Carpetas 'Textures' y 'World' verificadas. Iniciando lectura binaria de assets...");
-            
-            // 🚀 INICIA LA SINCRONIZACIÓN VISUAL Y LÓGICA
-            var root = GetTree().Root;
+        GD.Print("[WoW] Creando MobileUI...");
 
-            // 1. Instanciamos la pantalla de Login (C# puro, sin archivo .tscn)
-            MobileUILogin pantallaLogin = new MobileUILogin();
+        _mobileUI = new MobileUI();
 
-            // 2. Buscamos de forma segura el Autoload de Red que se ejecuta en el fondo
-            var netClient = GetNodeOrNull<NetworkClient>("/root/NetworkClient");
+        root.AddChild(_mobileUI);
 
-            if (netClient != null)
-            {
-                // 3. Método corregido: Ahora llama a Inicializar para resolver el error de compilación
-                pantallaLogin.Inicializar((usuario, contrasena) => 
-                {
-                    GD.Print($"[WoW] Callback activado. Conectando al servidor para la cuenta: {usuario}");
-                    netClient.IniciarSesion(usuario, contrasena);
-                });
-                
-                GD.Print("[WoW] Interfaz de Login vinculada exitosamente al cliente de Red.");
-            }
-            else
-            {
-                GD.PrintErr("[WoW] [ERROR CRÍTICO] No se encontró el Autoload 'NetworkClient'. Revisa tu project.godot");
-            }
+        GD.Print("[WoW] MobileUI agregado correctamente.");
 
-            // 4. Añadimos la interfaz a la ventana principal para que se ejecute su _Ready() y se dibuje
-            root.AddChild(pantallaLogin);
-        }
-        else
-        {
-            GD.PrintErr("[WoW] [ERROR] Estructura interna incompleta dentro de WoW335Android.");
-            MostrarMensajeErrorEstructura();
-        }
+        MostrarEstadoInicial();
     }
 
-    private void MostrarMensajeErrorRuta()
+    private void MostrarEstadoInicial()
     {
         CanvasLayer canvas = new CanvasLayer();
+        canvas.Name = "BootStatus";
+
         Label label = new Label();
-        
-        label.Text = "FALTAN LOS ARCHIVOS DEL JUEGO\n\n" +
-                     "Por favor, copia tus assets extraídos en la memoria de tu móvil:\n\n" +
-                     "Almacenamiento interno ➡️ Documents ➡️ WoW335Android ➡️ (Aquí tus carpetas)\n\n" +
-                     "Luego, reinicia la aplicación.";
-                     
+
+        label.Text =
+            "WORLD OF WARCRAFT 3.3.5a\n\n" +
+            "WoW Mobile Client\n\n" +
+            "Inicialización completada.\n\n" +
+            "Selecciona tus datos del cliente\n" +
+            "cuando el sistema de assets esté habilitado.";
+
         label.HorizontalAlignment = HorizontalAlignment.Center;
         label.VerticalAlignment = VerticalAlignment.Center;
+
         label.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+
         label.AddThemeFontSizeOverride("font_size", 22);
-        
+
         canvas.AddChild(label);
+
         GetTree().Root.AddChild(canvas);
+
+        _diagnosticLayer = canvas;
+
+        /*
+         * No eliminamos MobileUI.
+         *
+         * Este mensaje solamente sirve para comprobar que:
+         *
+         * Godot -> C# -> ProgramEntryPoint -> MobileUI
+         *
+         * funciona correctamente en Android.
+         *
+         * El lector de assets se habilitará posteriormente.
+         */
     }
 
-    private void MostrarMensajeErrorEstructura()
+    private void MostrarErrorFatal(Exception ex)
     {
-        CanvasLayer canvas = new CanvasLayer();
-        Label label = new Label();
-        
-        label.Text = "ESTRUCTURA DE ASSETS INCORRECTA\n\n" +
-                     "Asegúrate de que dentro de 'WoW335Android' se encuentren\n" +
-                     "las carpetas extraídas directamente de los archivos MPQ\n" +
-                     "(por ejemplo, las carpetas 'Textures' y 'World').";
-                     
-        label.HorizontalAlignment = HorizontalAlignment.Center;
-        label.VerticalAlignment = VerticalAlignment.Center;
-        label.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        label.AddThemeFontSizeOverride("font_size", 22);
-        
-        canvas.AddChild(label);
-        GetTree().Root.AddChild(canvas);
+        try
+        {
+            CanvasLayer canvas = new CanvasLayer();
+            canvas.Name = "FatalError";
+
+            ColorRect fondo = new ColorRect();
+
+            fondo.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+
+            Label label = new Label();
+
+            label.Text =
+                "ERROR DE INICIALIZACIÓN\n\n" +
+                "El cliente no pudo iniciar.\n\n" +
+                ex.GetType().Name +
+                "\n\n" +
+                ex.Message;
+
+            label.HorizontalAlignment = HorizontalAlignment.Center;
+            label.VerticalAlignment = VerticalAlignment.Center;
+
+            label.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+
+            label.AddThemeFontSizeOverride("font_size", 20);
+
+            canvas.AddChild(fondo);
+            canvas.AddChild(label);
+
+            GetTree().Root.AddChild(canvas);
+        }
+        catch
+        {
+            GD.PrintErr("[WoW] No se pudo mostrar el error en pantalla.");
+        }
     }
 }
