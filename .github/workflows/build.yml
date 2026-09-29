@@ -16,14 +16,19 @@ concurrency:
 jobs:
   build-android:
     runs-on: ubuntu-22.04
+
     timeout-minutes: 30
+
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
 
     # ============================================================
     # 1. CLONAR REPOSITORIO
     # ============================================================
-    - name: Clonar repositorio (Git LFS)
+    - name: Clonar repositorio con Git LFS
       uses: actions/checkout@v4
       with:
         lfs: true
@@ -56,72 +61,147 @@ jobs:
         dotnet --info
 
     # ============================================================
-    # 4. ANDROID SDK
+    # 4. CONFIGURAR ANDROID SDK DEL RUNNER
+    #
+    # NO usamos android-actions/setup-android@v3.
+    #
+    # Ese action estaba ejecutando:
+    #
+    #     sdkmanager tools
+    #
+    # y "tools" ya no existe como paquete del SDK moderno.
     # ============================================================
     - name: Configurar Android SDK
-      uses: android-actions/setup-android@v3
+      shell: bash
+      run: |
+        set -e
+
+        echo "ANDROID_HOME=$ANDROID_HOME"
+        echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+
+        test -d "$ANDROID_HOME" || {
+          echo "ERROR: Android SDK no encontrado."
+          exit 1
+        }
+
+        test -f "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" || {
+          echo "No existe cmdline-tools/latest."
+          echo "Buscando sdkmanager disponible..."
+
+          find "$ANDROID_HOME/cmdline-tools" \
+            -type f \
+            -name sdkmanager \
+            -print
+        }
+
+        SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
+          -type f \
+          -name sdkmanager \
+          | sort -V \
+          | tail -n 1)
+
+        if [ -z "$SDKMANAGER" ]; then
+          echo "ERROR: No se encontró sdkmanager."
+          exit 1
+        fi
+
+        echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
+
+        echo "Usando sdkmanager:"
+        echo "$SDKMANAGER"
+
+        "$SDKMANAGER" --version
 
     # ============================================================
-    # 5. INSTALAR SOLO LOS PAQUETES NECESARIOS
+    # 5. ACEPTAR LICENCIAS
+    # ============================================================
+    - name: Aceptar licencias Android
+      shell: bash
+      run: |
+        yes | "$SDKMANAGER" --licenses >/dev/null || true
+
+    # ============================================================
+    # 6. INSTALAR SOLO LOS PAQUETES NECESARIOS
     # ============================================================
     - name: Instalar Android SDK 34
       shell: bash
       run: |
-        echo "Aceptando licencias..."
-        yes | sdkmanager --licenses >/dev/null || true
+        set -e
 
-        echo "Instalando Android SDK..."
+        echo "Instalando paquetes Android necesarios..."
 
-        sdkmanager \
+        "$SDKMANAGER" \
           "platform-tools" \
           "platforms;android-34" \
           "build-tools;34.0.0"
 
         echo ""
-        echo "Android SDK instalado."
-
-        echo ""
-        echo "Build Tools:"
+        echo "=== Build Tools ==="
         ls -la "$ANDROID_HOME/build-tools"
 
         echo ""
-        echo "Platforms:"
+        echo "=== Android Platforms ==="
         ls -la "$ANDROID_HOME/platforms"
 
+        echo ""
+        echo "=== Platform Tools ==="
+        ls -la "$ANDROID_HOME/platform-tools"
+
     # ============================================================
-    # 6. VERIFICAR ARCHIVOS DEL PROYECTO
+    # 7. CONFIGURAR PATH ANDROID
+    # ============================================================
+    - name: Configurar PATH Android
+      shell: bash
+      run: |
+        echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+        echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+        echo "$ANDROID_HOME/build-tools/34.0.0" >> "$GITHUB_PATH"
+
+    # ============================================================
+    # 8. VERIFICAR PROYECTO
     # ============================================================
     - name: Verificar archivos del proyecto
       shell: bash
       run: |
+        set -e
+
+        echo "=== Archivos principales ==="
+
         test -f project.godot || {
-          echo "ERROR: falta project.godot"
+          echo "ERROR: Falta project.godot"
           exit 1
         }
 
         test -f "WoW Android Client.csproj" || {
-          echo "ERROR: falta WoW Android Client.csproj"
+          echo "ERROR: Falta WoW Android Client.csproj"
           exit 1
         }
 
         test -f NetworkClient.cs || {
-          echo "ERROR: falta NetworkClient.cs"
+          echo "ERROR: Falta NetworkClient.cs"
           exit 1
         }
 
         test -f ProgramEntryPoint.cs || {
-          echo "ERROR: falta ProgramEntryPoint.cs"
+          echo "ERROR: Falta ProgramEntryPoint.cs"
           exit 1
         }
 
-        echo "Archivos principales encontrados correctamente."
+        test -f export_presets.cfg || {
+          echo "ERROR: Falta export_presets.cfg"
+          exit 1
+        }
+
+        echo "Todos los archivos principales están presentes."
 
     # ============================================================
-    # 7. GODOT 4.2.1 MONO
+    # 9. PREPARAR GODOT 4.2.1 MONO
     # ============================================================
     - name: Preparar Godot 4.2.1 Mono
       shell: bash
       run: |
+        set -e
+
         chmod +x ./Godot_v4.2.1-stable_mono_linux.x86_64
 
         echo "=== Godot ==="
@@ -131,8 +211,9 @@ jobs:
         echo ""
         echo "=== Preparando templates ==="
 
-        mkdir -p \
-          "$HOME/.local/share/godot/export_templates/4.2.1.stable.mono"
+        TEMPLATE_DIR="$HOME/.local/share/godot/export_templates/4.2.1.stable.mono"
+
+        mkdir -p "$TEMPLATE_DIR"
 
         rm -rf /tmp/godot_tmpl
         mkdir -p /tmp/godot_tmpl
@@ -141,31 +222,47 @@ jobs:
           Godot_v4.2.1-stable_mono_export_templates.tpz \
           -d /tmp/godot_tmpl
 
+        echo ""
+        echo "Contenido del TPZ:"
+
+        find /tmp/godot_tmpl \
+          -maxdepth 3 \
+          -type f \
+          -print
+
         if [ ! -d "/tmp/godot_tmpl/templates" ]; then
-          echo "ERROR: No se encontró la carpeta templates."
-          find /tmp/godot_tmpl -maxdepth 3 -type f
+          echo "ERROR: No se encontró /tmp/godot_tmpl/templates"
           exit 1
         fi
 
         cp -r \
           /tmp/godot_tmpl/templates/. \
-          "$HOME/.local/share/godot/export_templates/4.2.1.stable.mono/"
+          "$TEMPLATE_DIR/"
 
         echo ""
-        echo "Templates instaladas."
+        echo "Templates instaladas:"
+        find "$TEMPLATE_DIR" \
+          -maxdepth 1 \
+          -type f \
+          -printf '%f\n'
 
     # ============================================================
-    # 8. RESTORE C#
+    # 10. RESTORE C#
     # ============================================================
     - name: Restaurar proyecto C#
+      shell: bash
       run: |
-        dotnet restore "WoW Android Client.csproj" \
+        dotnet restore \
+          "WoW Android Client.csproj" \
           --verbosity normal
 
     # ============================================================
-    # 9. BUILD C#
+    # 11. COMPILAR C# RELEASE
+    #
+    # Aquí queremos descubrir cualquier error real de C#.
     # ============================================================
     - name: Compilar proyecto C# Release
+      shell: bash
       run: |
         dotnet build \
           "WoW Android Client.csproj" \
@@ -174,9 +271,9 @@ jobs:
           --verbosity normal
 
     # ============================================================
-    # 10. VERIFICAR DLL
+    # 12. VERIFICAR DLL
     # ============================================================
-    - name: Verificar DLL
+    - name: Verificar assemblies C#
       shell: bash
       run: |
         echo "=== DLL generadas ==="
@@ -187,7 +284,9 @@ jobs:
           -print
 
     # ============================================================
-    # 11. PREPARAR SOLUCIÓN GODOT
+    # 13. PREPARAR SOLUCIÓN GODOT
+    #
+    # SIN "|| true".
     # ============================================================
     - name: Preparar solución C# de Godot
       shell: bash
@@ -202,7 +301,7 @@ jobs:
           --verbose
 
     # ============================================================
-    # 12. VALIDAR PROYECTO
+    # 14. VALIDAR PROYECTO GODOT
     # ============================================================
     - name: Validar proyecto Godot
       shell: bash
@@ -216,33 +315,33 @@ jobs:
           --verbose
 
     # ============================================================
-    # 13. COMPROBAR PRESET
+    # 15. COMPROBAR PRESET ANDROID
     # ============================================================
     - name: Comprobar preset Android
       shell: bash
       run: |
-        if [ ! -f export_presets.cfg ]; then
-          echo "ERROR: falta export_presets.cfg"
-          exit 1
-        fi
+        echo "=== Presets disponibles ==="
 
-        echo "=== Presets ==="
         grep -n 'name=' export_presets.cfg || true
 
         echo ""
-        echo "=== Preset Android ==="
+        echo "=== Buscando preset Android ==="
 
-        grep -n 'name="Android"' export_presets.cfg || {
+        if ! grep -q 'name="Android"' export_presets.cfg; then
           echo "ERROR: No existe un preset llamado Android."
           exit 1
-        }
+        fi
+
+        echo "Preset Android encontrado."
 
     # ============================================================
-    # 14. CREAR KEYSTORE RELEASE
+    # 16. CREAR KEYSTORE RELEASE
     # ============================================================
     - name: Generar firma Release
       shell: bash
       run: |
+        set -e
+
         keytool \
           -keyalg RSA \
           -genkeypair \
@@ -254,21 +353,29 @@ jobs:
           -validity 20000 \
           -noprompt
 
-        echo "Keystore creada correctamente."
+        echo ""
+        echo "Keystore creada."
+
+        keytool \
+          -list \
+          -keystore release.keystore \
+          -storepass androidpassword
 
     # ============================================================
-    # 15. PREPARAR SALIDA
+    # 17. PREPARAR CARPETA APK
     # ============================================================
-    - name: Crear carpeta de salida
+    - name: Preparar salida
       run: |
         mkdir -p build/android
 
     # ============================================================
-    # 16. EXPORTAR RELEASE
+    # 18. EXPORTAR APK RELEASE
     # ============================================================
     - name: Exportar APK Release
       shell: bash
       run: |
+        set -e
+
         timeout 600 \
           ./Godot_v4.2.1-stable_mono_linux.x86_64 \
           --headless \
@@ -279,14 +386,16 @@ jobs:
           build/android/wow_335_client.apk
 
     # ============================================================
-    # 17. VERIFICAR APK
+    # 19. VERIFICAR APK
     # ============================================================
-    - name: Verificar APK
+    - name: Verificar APK generado
       shell: bash
       run: |
         if [ ! -f build/android/wow_335_client.apk ]; then
-          echo "ERROR: no se creó el APK."
+          echo "ERROR: Godot no creó el APK."
 
+          echo ""
+          echo "Contenido de build:"
           find build \
             -maxdepth 4 \
             -type f \
@@ -295,10 +404,13 @@ jobs:
           exit 1
         fi
 
+        echo "APK creado:"
         ls -lh build/android/wow_335_client.apk
 
+        file build/android/wow_335_client.apk
+
     # ============================================================
-    # 18. ENCONTRAR APKSIGNER
+    # 20. ENCONTRAR APKSIGNER
     # ============================================================
     - name: Localizar apksigner
       shell: bash
@@ -310,7 +422,7 @@ jobs:
           | tail -n 1)
 
         if [ -z "$APKSIGNER_PATH" ]; then
-          echo "ERROR: no se encontró apksigner."
+          echo "ERROR: No se encontró apksigner."
           exit 1
         fi
 
@@ -322,11 +434,13 @@ jobs:
         "$APKSIGNER_PATH" --version
 
     # ============================================================
-    # 19. FIRMAR RELEASE
+    # 21. FIRMAR APK RELEASE
     # ============================================================
     - name: Firmar APK Release
       shell: bash
       run: |
+        set -e
+
         "$APKSIGNER_PATH" sign \
           --ks release.keystore \
           --ks-key-alias androidreleasekey \
@@ -335,11 +449,13 @@ jobs:
           build/android/wow_335_client.apk
 
     # ============================================================
-    # 20. VERIFICAR FIRMA
+    # 22. VERIFICAR FIRMA
     # ============================================================
-    - name: Verificar firma
+    - name: Verificar firma APK
       shell: bash
       run: |
+        set -e
+
         "$APKSIGNER_PATH" verify \
           --verbose \
           build/android/wow_335_client.apk
@@ -352,9 +468,9 @@ jobs:
         ls -lh build/android/wow_335_client.apk
 
     # ============================================================
-    # 21. SUBIR APK
+    # 23. SUBIR APK
     # ============================================================
-    - name: Subir APK
+    - name: Subir APK generado
       uses: actions/upload-artifact@v4
       with:
         name: WoW-Android-Client-3.3.5a
