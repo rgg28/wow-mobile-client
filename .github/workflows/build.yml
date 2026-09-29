@@ -1,11 +1,10 @@
-name: Compilar WoW
+name: Compilar WoW Android
 
 on:
   push:
     branches:
       - main
       - master
-
   workflow_dispatch:
 
 env:
@@ -16,21 +15,21 @@ env:
 
 jobs:
   build:
+    name: Build WoW Android
     runs-on: ubuntu-22.04
 
     steps:
 
       # ============================================================
-      # 1. Descargar repositorio
+      # 1. DESCARGAR EL REPOSITORIO
       # ============================================================
-      - name: Descargar código fuente
+      - name: Descargar codigo fuente
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          lfs: true
 
       # ============================================================
-      # 2. Java 17
+      # 2. JAVA 17
       # ============================================================
       - name: Configurar Java 17
         uses: actions/setup-java@v4
@@ -47,9 +46,9 @@ jobs:
           dotnet-version: "8.0.x"
 
       # ============================================================
-      # 4. Preparar Android SDK
+      # 4. ANDROID SDK
       # ============================================================
-      - name: Configurar Android SDK
+      - name: Preparar Android SDK
         shell: bash
         run: |
           set -e
@@ -57,182 +56,178 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
 
-          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
-            -type f \
-            -name sdkmanager \
-            | head -n 1)
+          yes | sdkmanager --licenses >/dev/null || true
 
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERROR: No se encontró sdkmanager."
-            exit 1
-          fi
-
-          echo "sdkmanager encontrado:"
-          echo "$SDKMANAGER"
-
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
-
-          "$SDKMANAGER" \
+          sdkmanager \
             "platform-tools" \
             "platforms;android-34" \
             "build-tools;34.0.0"
 
-          echo "Android SDK preparado."
+          echo
+          echo "Android SDK instalado:"
+          sdkmanager --list_installed | grep -E \
+            "platform-tools|platforms;android-34|build-tools;34.0.0" || true
 
       # ============================================================
-      # 5. Verificar Godot incluido en el repositorio
+      # 5. VERIFICAR GODOT INCLUIDO EN EL REPOSITORIO
       # ============================================================
-      - name: Preparar Godot incluido en el repositorio
+      - name: Verificar Godot Mono incluido
         shell: bash
         run: |
           set -e
 
-          echo "===== GODOT ====="
+          GODOT="./Godot_v4.2.1-stable_mono_linux.x86_64"
+          TEMPLATES="./Godot_v4.2.1-stable_mono_export_templates.tpz"
+          GODOTSHARP="./GodotSharp"
 
-          test -f "./Godot_v4.2.1-stable_mono_linux.x86_64"
+          echo "Buscando Godot..."
+          test -f "$GODOT"
 
-          test -f "./Godot_v4.2.1-stable_mono_export_templates.tpz"
+          echo "Buscando templates..."
+          test -f "$TEMPLATES"
 
-          test -d "./GodotSharp"
+          echo "Buscando GodotSharp..."
+          test -d "$GODOTSHARP"
 
-          chmod +x "./Godot_v4.2.1-stable_mono_linux.x86_64"
+          chmod +x "$GODOT"
 
-          echo "Ejecutable:"
-          ls -lh "./Godot_v4.2.1-stable_mono_linux.x86_64"
+          echo
+          echo "Godot:"
+          ls -lh "$GODOT"
 
           echo
           echo "Templates:"
-          ls -lh "./Godot_v4.2.1-stable_mono_export_templates.tpz"
+          ls -lh "$TEMPLATES"
 
           echo
           echo "GodotSharp:"
-          ls -ld "./GodotSharp"
+          find "$GODOTSHARP" -maxdepth 2 -type f | head -50
 
           echo
-          echo "Versión de Godot:"
-
-          ./Godot_v4.2.1-stable_mono_linux.x86_64 \
-            --version
+          echo "Version de Godot:"
+          "$GODOT" --version
 
       # ============================================================
-      # 6. Instalar templates desde el TPZ del repositorio
+      # 6. INSTALAR TEMPLATES MONO
       # ============================================================
       - name: Instalar templates Mono
         shell: bash
         run: |
           set -e
 
-          TEMPLATE_DIR="$HOME/.local/share/godot/export_templates/4.2.1.stable.mono"
+          GODOT_TEMPLATES="$HOME/.local/share/godot/export_templates/4.2.1.stable.mono"
 
-          rm -rf "$TEMPLATE_DIR"
+          echo "Limpiando templates anteriores..."
+          rm -rf "$GODOT_TEMPLATES"
 
-          mkdir -p "$TEMPLATE_DIR"
+          mkdir -p "$GODOT_TEMPLATES"
 
+          echo
           echo "Extrayendo templates..."
 
           unzip -q \
             "./Godot_v4.2.1-stable_mono_export_templates.tpz" \
-            -d "$TEMPLATE_DIR"
+            -d "$GODOT_TEMPLATES"
 
           echo
-          echo "Contenido inicial:"
-          find "$TEMPLATE_DIR" -maxdepth 3 -type f -print
+          echo "Contenido extraido:"
+          find "$GODOT_TEMPLATES" -maxdepth 3 -type f -print
 
-          # El paquete .tpz normalmente contiene una carpeta
-          # llamada templates.
-          if [ -d "$TEMPLATE_DIR/templates" ]; then
-            cp -r \
-              "$TEMPLATE_DIR/templates/"* \
-              "$TEMPLATE_DIR/"
+          # El .tpz normalmente contiene una carpeta "templates".
+          # Copiamos su contenido al directorio que Godot espera.
+          if [ -d "$GODOT_TEMPLATES/templates" ]; then
+
+            echo
+            echo "Moviendo templates al directorio de Godot..."
+
+            cp -a \
+              "$GODOT_TEMPLATES/templates/." \
+              "$GODOT_TEMPLATES/"
+
+            rm -rf "$GODOT_TEMPLATES/templates"
+
           fi
 
           echo
           echo "Templates finales:"
-          find "$TEMPLATE_DIR" -maxdepth 2 -type f -print
+          find "$GODOT_TEMPLATES" -maxdepth 2 -type f -print
+
+          # ========================================================
+          # VERIFICAR ANDROID DEBUG
+          # ========================================================
 
           echo
-          echo "Buscando Android Debug..."
+          echo "Verificando Android Debug..."
 
-          DEBUG_TEMPLATE=$(find "$TEMPLATE_DIR" \
-            -type f \
-            -name "android_debug.apk" \
-            | head -n 1)
+          test -f "$GODOT_TEMPLATES/android_debug.apk"
 
-          if [ -z "$DEBUG_TEMPLATE" ]; then
-            echo "ERROR: No se encontró android_debug.apk"
-            exit 1
-          fi
+          echo "Android Debug OK."
 
-          echo "Debug:"
-          echo "$DEBUG_TEMPLATE"
+          # ========================================================
+          # VERIFICAR ANDROID RELEASE
+          # ========================================================
 
           echo
-          echo "Buscando Android Release..."
+          echo "Verificando Android Release..."
 
-          RELEASE_TEMPLATE=$(find "$TEMPLATE_DIR" \
-            -type f \
-            -name "android_release.apk" \
-            | head -n 1)
+          test -f "$GODOT_TEMPLATES/android_release.apk"
 
-          if [ -z "$RELEASE_TEMPLATE" ]; then
-            echo "ERROR: No se encontró android_release.apk"
-            exit 1
-          fi
-
-          echo "Release:"
-          echo "$RELEASE_TEMPLATE"
-
-          # Si quedaron dentro de una subcarpeta, copiarlos
-          # a la ubicación exacta que Godot espera.
-          cp "$DEBUG_TEMPLATE" \
-            "$TEMPLATE_DIR/android_debug.apk"
-
-          cp "$RELEASE_TEMPLATE" \
-            "$TEMPLATE_DIR/android_release.apk"
+          echo "Android Release OK."
 
           echo
-          echo "Templates Android Mono preparados."
+          echo "=========================================="
+          echo " TEMPLATES ANDROID MONO OK"
+          echo "=========================================="
 
-          ls -lh "$TEMPLATE_DIR/android_debug.apk"
-          ls -lh "$TEMPLATE_DIR/android_release.apk"
+          ls -lh "$GODOT_TEMPLATES/android_debug.apk"
+          ls -lh "$GODOT_TEMPLATES/android_release.apk"
 
       # ============================================================
-      # 7. Verificar proyecto
+      # 7. MOSTRAR ESTRUCTURA DEL PROYECTO
       # ============================================================
-      - name: Verificar proyecto
+      - name: Verificar proyecto Godot
         shell: bash
         run: |
           set -e
+
+          echo "Directorio actual:"
+          pwd
+
+          echo
+          echo "Archivos principales:"
+
+          find . \
+            -maxdepth 2 \
+            -type f \
+            \( \
+              -name "project.godot" \
+              -o -name "export_presets.cfg" \
+              -o -name "*.csproj" \
+              -o -name "*.cs" \
+            \) \
+            -print | sort
+
+          echo
+          echo "Verificando archivos obligatorios..."
 
           test -f "project.godot"
           test -f "export_presets.cfg"
           test -f "WoW Android Client.csproj"
 
-          echo "project.godot OK"
-          echo "export_presets.cfg OK"
-          echo "csproj OK"
-
-          echo
-          echo "Archivos C#:"
-
-          find . -maxdepth 2 \
-            -type f \
-            -name "*.cs" \
-            -print
+          echo "Proyecto encontrado correctamente."
 
       # ============================================================
-      # 8. Restaurar NuGet
+      # 8. RESTORE .NET
       # ============================================================
-      - name: Restaurar proyecto .NET
+      - name: Restaurar proyecto C#
         shell: bash
         run: |
           set -e
 
-          dotnet restore \
-            "WoW Android Client.csproj"
+          dotnet restore "WoW Android Client.csproj"
 
       # ============================================================
-      # 9. Compilar Debug
+      # 9. COMPILAR DEBUG
       # ============================================================
       - name: Compilar C# Debug
         shell: bash
@@ -245,7 +240,7 @@ jobs:
             --no-restore
 
       # ============================================================
-      # 10. Compilar Release
+      # 10. COMPILAR RELEASE
       # ============================================================
       - name: Compilar C# Release
         shell: bash
@@ -258,9 +253,9 @@ jobs:
             --no-restore
 
       # ============================================================
-      # 11. Verificar assemblies
+      # 11. VERIFICAR DLL DEBUG + RELEASE
       # ============================================================
-      - name: Verificar assemblies Debug y Release
+      - name: Verificar assemblies C#
         shell: bash
         run: |
           set -e
@@ -268,38 +263,37 @@ jobs:
           DEBUG_DLL=".godot/mono/temp/bin/Debug/WoW Android Client.dll"
           RELEASE_DLL=".godot/mono/temp/bin/Release/WoW Android Client.dll"
 
-          echo "===== DEBUG ====="
-
+          echo "Buscando assembly Debug..."
           test -f "$DEBUG_DLL"
 
+          echo "Debug OK:"
           ls -lh "$DEBUG_DLL"
 
           echo
-          echo "===== RELEASE ====="
-
+          echo "Buscando assembly Release..."
           test -f "$RELEASE_DLL"
 
+          echo "Release OK:"
           ls -lh "$RELEASE_DLL"
 
-          echo
-          echo "Ambos assemblies existen."
-
       # ============================================================
-      # 12. Generar solución C# de Godot
+      # 12. GENERAR SOLUTION GODOT
       # ============================================================
-      - name: Generar solución Godot
+      - name: Generar solution de Godot
         shell: bash
         run: |
           set -e
 
           ./Godot_v4.2.1-stable_mono_linux.x86_64 \
             --headless \
-            --path "$GITHUB_WORKSPACE" \
+            --path . \
+            --editor \
+            --quit \
             --build-solutions \
-            --quit
+            --verbose
 
       # ============================================================
-      # 13. Validar proyecto
+      # 13. VALIDAR PROYECTO
       # ============================================================
       - name: Validar proyecto Godot
         shell: bash
@@ -308,44 +302,38 @@ jobs:
 
           ./Godot_v4.2.1-stable_mono_linux.x86_64 \
             --headless \
-            --path "$GITHUB_WORKSPACE" \
+            --path . \
             --editor \
-            --quit
+            --quit \
+            --verbose
 
       # ============================================================
-      # 14. Verificar preset Android
+      # 14. VERIFICAR PRESET ANDROID
       # ============================================================
       - name: Verificar preset Android
         shell: bash
         run: |
           set -e
 
-          echo "===== PRESETS ====="
+          echo "Buscando preset Android..."
 
-          grep -n '^\[preset\.' \
-            export_presets.cfg || true
-
-          echo
-          echo "===== ANDROID ====="
-
-          grep -n 'platform="Android"' \
-            export_presets.cfg || true
+          grep -n 'name="Android"' export_presets.cfg || {
+            echo "ERROR: No existe el preset Android."
+            exit 1
+          }
 
           echo
-          echo "===== PACKAGE ====="
-
-          grep -n 'package/name' \
-            export_presets.cfg || true
+          echo "Preset Android encontrado."
 
       # ============================================================
-      # 15. Crear keystore temporal
+      # 15. CREAR KEYSTORE TEMPORAL
       # ============================================================
-      - name: Crear keystore
+      - name: Crear keystore temporal
         shell: bash
         run: |
           set -e
 
-          mkdir -p ".keys"
+          mkdir -p .keys
 
           keytool \
             -genkeypair \
@@ -357,70 +345,108 @@ jobs:
             -validity 10000 \
             -storepass androidpassword \
             -keypass androidpassword \
-            -dname "CN=WoW Android,O=WoW,C=AR"
+            -dname "CN=WoW Android, OU=Mobile, O=WoW, L=Argentina, ST=Tucuman, C=AR"
 
-          test -f ".keys/signingKey.jks"
+          echo
+          echo "Keystore creado:"
 
-          echo "Keystore creado."
+          ls -lh ".keys/signingKey.jks"
 
       # ============================================================
-      # 16. Exportar DEBUG
+      # 16. CREAR DIRECTORIO BUILD
+      # ============================================================
+      - name: Preparar directorio de salida
+        shell: bash
+        run: |
+          set -e
+
+          rm -rf build
+          mkdir -p build
+
+      # ============================================================
+      # 17. EXPORTAR APK DEBUG
       # ============================================================
       - name: Exportar APK Debug
         shell: bash
         run: |
           set -e
 
-          mkdir -p build
-
-          rm -f \
-            build/WoW-debug.apk \
-            build/WoW-debug-aligned.apk \
-            build/WoW-debug-signed.apk
-
-          echo "Exportando DEBUG..."
-
           ./Godot_v4.2.1-stable_mono_linux.x86_64 \
             --headless \
-            --path "$GITHUB_WORKSPACE" \
+            --path . \
             --export-debug \
             "Android" \
-            "$GITHUB_WORKSPACE/build/WoW-debug.apk"
+            "build/WoW-debug.apk"
+
+          echo
+          echo "APK Debug generado:"
 
           test -f "build/WoW-debug.apk"
 
           ls -lh "build/WoW-debug.apk"
 
       # ============================================================
-      # 17. Exportar RELEASE
+      # 18. EXPORTAR APK RELEASE
       # ============================================================
       - name: Exportar APK Release
         shell: bash
         run: |
           set -e
 
-          mkdir -p build
-
-          rm -f \
-            build/WoW-release.apk \
-            build/WoW-release-aligned.apk \
-            build/WoW-release-signed.apk
-
-          echo "Exportando RELEASE..."
-
           ./Godot_v4.2.1-stable_mono_linux.x86_64 \
             --headless \
-            --path "$GITHUB_WORKSPACE" \
+            --path . \
             --export-release \
             "Android" \
-            "$GITHUB_WORKSPACE/build/WoW-release.apk"
+            "build/WoW-release.apk"
+
+          echo
+          echo "APK Release generado:"
 
           test -f "build/WoW-release.apk"
 
           ls -lh "build/WoW-release.apk"
 
       # ============================================================
-      # 18. Firmar DEBUG
+      # 19. INSTALAR HERRAMIENTAS ANDROID PARA FIRMAR
+      # ============================================================
+      - name: Preparar herramientas de firma
+        shell: bash
+        run: |
+          set -e
+
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
+
+          test -f "$BUILD_TOOLS/zipalign"
+          test -f "$BUILD_TOOLS/apksigner"
+
+          echo "zipalign:"
+          "$BUILD_TOOLS/zipalign" --help | head -5 || true
+
+          echo
+          echo "apksigner:"
+          "$BUILD_TOOLS/apksigner" version
+
+      # ============================================================
+      # 20. ALINEAR APK DEBUG
+      # ============================================================
+      - name: Alinear APK Debug
+        shell: bash
+        run: |
+          set -e
+
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
+
+          "$BUILD_TOOLS/zipalign" \
+            -f \
+            4 \
+            "build/WoW-debug.apk" \
+            "build/WoW-debug-aligned.apk"
+
+          test -f "build/WoW-debug-aligned.apk"
+
+      # ============================================================
+      # 21. FIRMAR APK DEBUG
       # ============================================================
       - name: Firmar APK Debug
         shell: bash
@@ -429,24 +455,36 @@ jobs:
 
           BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
 
-          "$BUILD_TOOLS/zipalign" \
-            -f \
-            4 \
-            build/WoW-debug.apk \
-            build/WoW-debug-aligned.apk
-
           "$BUILD_TOOLS/apksigner" sign \
             --ks ".keys/signingKey.jks" \
+            --ks-key-alias android \
             --ks-pass pass:androidpassword \
             --key-pass pass:androidpassword \
-            --ks-key-alias android \
-            --out build/WoW-debug-signed.apk \
-            build/WoW-debug-aligned.apk
+            --out "build/WoW-debug-signed.apk" \
+            "build/WoW-debug-aligned.apk"
 
           test -f "build/WoW-debug-signed.apk"
 
       # ============================================================
-      # 19. Firmar RELEASE
+      # 22. ALINEAR APK RELEASE
+      # ============================================================
+      - name: Alinear APK Release
+        shell: bash
+        run: |
+          set -e
+
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
+
+          "$BUILD_TOOLS/zipalign" \
+            -f \
+            4 \
+            "build/WoW-release.apk" \
+            "build/WoW-release-aligned.apk"
+
+          test -f "build/WoW-release-aligned.apk"
+
+      # ============================================================
+      # 23. FIRMAR APK RELEASE
       # ============================================================
       - name: Firmar APK Release
         shell: bash
@@ -455,49 +493,48 @@ jobs:
 
           BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
 
-          "$BUILD_TOOLS/zipalign" \
-            -f \
-            4 \
-            build/WoW-release.apk \
-            build/WoW-release-aligned.apk
-
           "$BUILD_TOOLS/apksigner" sign \
             --ks ".keys/signingKey.jks" \
+            --ks-key-alias android \
             --ks-pass pass:androidpassword \
             --key-pass pass:androidpassword \
-            --ks-key-alias android \
-            --out build/WoW-release-signed.apk \
-            build/WoW-release-aligned.apk
+            --out "build/WoW-release-signed.apk" \
+            "build/WoW-release-aligned.apk"
 
           test -f "build/WoW-release-signed.apk"
 
       # ============================================================
-      # 20. Verificar firmas
+      # 24. VERIFICAR FIRMA DEBUG
       # ============================================================
-      - name: Verificar firmas APK
+      - name: Verificar firma Debug
         shell: bash
         run: |
           set -e
 
           BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
 
-          echo "===== DEBUG ====="
+          "$BUILD_TOOLS/apksigner" verify \
+            --verbose \
+            "build/WoW-debug-signed.apk"
+
+      # ============================================================
+      # 25. VERIFICAR FIRMA RELEASE
+      # ============================================================
+      - name: Verificar firma Release
+        shell: bash
+        run: |
+          set -e
+
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
 
           "$BUILD_TOOLS/apksigner" verify \
             --verbose \
-            build/WoW-debug-signed.apk
-
-          echo
-          echo "===== RELEASE ====="
-
-          "$BUILD_TOOLS/apksigner" verify \
-            --verbose \
-            build/WoW-release-signed.apk
+            "build/WoW-release-signed.apk"
 
       # ============================================================
-      # 21. Mostrar resultados
+      # 26. MOSTRAR APK FINALES
       # ============================================================
-      - name: Mostrar APKs finales
+      - name: Mostrar APK finales
         shell: bash
         run: |
           set -e
@@ -507,17 +544,22 @@ jobs:
           echo " APK DEBUG"
           echo "=========================================="
 
-          ls -lh build/WoW-debug-signed.apk
+          ls -lh "build/WoW-debug-signed.apk"
 
           echo
           echo "=========================================="
           echo " APK RELEASE"
           echo "=========================================="
 
-          ls -lh build/WoW-release-signed.apk
+          ls -lh "build/WoW-release-signed.apk"
+
+          echo
+          echo "=========================================="
+          echo " BUILD COMPLETADO"
+          echo "=========================================="
 
       # ============================================================
-      # 22. Artifact DEBUG
+      # 27. ARTIFACT DEBUG
       # ============================================================
       - name: Subir APK Debug
         uses: actions/upload-artifact@v4
@@ -525,10 +567,9 @@ jobs:
           name: WoW-Android-Debug
           path: build/WoW-debug-signed.apk
           if-no-files-found: error
-          retention-days: 14
 
       # ============================================================
-      # 23. Artifact RELEASE
+      # 28. ARTIFACT RELEASE
       # ============================================================
       - name: Subir APK Release
         uses: actions/upload-artifact@v4
@@ -536,4 +577,3 @@ jobs:
           name: WoW-Android-Release
           path: build/WoW-release-signed.apk
           if-no-files-found: error
-          retention-days: 14
