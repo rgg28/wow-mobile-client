@@ -1,0 +1,42 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.wowmobile.client'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.wowmobile.client'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName "0.1"
+
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c++17"
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+        }
+
+        release {
+            minifyEnabled false
+            shrinkResources false
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path file("src/main/CMakeLists.txt")
+            version "3.31.6"
+        }
+    }
+
+    ndkVersion "27.2.12479018"
+}
