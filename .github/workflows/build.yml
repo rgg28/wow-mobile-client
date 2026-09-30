@@ -22,7 +22,7 @@ jobs:
 
 
       # ============================================================
-      # 2. WoWee
+      # 2. WoWee + TODOS sus submódulos
       # ============================================================
 
       - name: Checkout WoWee
@@ -47,10 +47,7 @@ jobs:
 
 
       # ============================================================
-      # 4. Android SDK
-      #
-      # El runner de GitHub ya contiene Android SDK.
-      # No usamos android-actions/setup-android.
+      # 4. Localizar Android SDK
       # ============================================================
 
       - name: Configure Android SDK
@@ -59,17 +56,51 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
 
-          yes | sdkmanager --licenses >/dev/null || true
+          if [ -d "$ANDROID_HOME/cmdline-tools/latest/bin" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          elif [ -d "$ANDROID_HOME/cmdline-tools/16.0/bin" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"
+          else
+            SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
+              -type f \
+              -name sdkmanager \
+              | head -1)
+          fi
+
+          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
+            echo "ERROR: sdkmanager no encontrado"
+            find "$ANDROID_HOME" -maxdepth 5 \
+              -type f \
+              -name sdkmanager \
+              -print || true
+            exit 1
+          fi
+
+          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+
+          echo "sdkmanager encontrado:"
+          "$SDKMANAGER" --version
 
 
       # ============================================================
-      # 5. Instalar exactamente las herramientas necesarias
+      # 5. Aceptar licencias
       # ============================================================
 
-      - name: Install Android build tools
+      - name: Accept Android licenses
         shell: bash
         run: |
-          sdkmanager \
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+
+
+      # ============================================================
+      # 6. Instalar herramientas Android
+      # ============================================================
+
+      - name: Install Android toolchain
+        shell: bash
+        run: |
+          "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0" \
@@ -78,7 +109,7 @@ jobs:
 
 
       # ============================================================
-      # 6. Verificar NDK
+      # 7. Verificar toolchain
       # ============================================================
 
       - name: Verify Android toolchain
@@ -89,18 +120,21 @@ jobs:
           echo "$ANDROID_HOME"
           echo "=========================================="
 
-          echo "Installed NDK:"
+          echo "NDK:"
           ls -la "$ANDROID_HOME/ndk"
 
-          echo "Installed CMake:"
+          echo "CMake:"
           ls -la "$ANDROID_HOME/cmake"
+
+          echo "Build Tools:"
+          ls -la "$ANDROID_HOME/build-tools"
 
           test -d "$ANDROID_HOME/ndk/28.2.13676358"
           test -d "$ANDROID_HOME/cmake/3.31.6"
 
 
       # ============================================================
-      # 7. Preparar submódulos WoWee
+      # 8. Preparar WoWee
       # ============================================================
 
       - name: Prepare WoWee
@@ -112,12 +146,12 @@ jobs:
           echo "WoWee commit:"
           git rev-parse HEAD
 
-          echo "WoWee directories:"
-          find . -maxdepth 2 -type d | sort | head -100
+          echo "Submodules:"
+          git submodule status --recursive
 
 
       # ============================================================
-      # 8. Comprobar archivos fundamentales
+      # 9. Comprobar WoWee
       # ============================================================
 
       - name: Check WoWee
@@ -129,12 +163,12 @@ jobs:
           echo "WoWee CMake:"
           ls -lh wowee/CMakeLists.txt
 
-          echo "WoWee source:"
-          find wowee/src -type f | head -100
+          echo "WoWee source directories:"
+          find wowee/src -maxdepth 2 -type d | sort
 
 
       # ============================================================
-      # 9. Permisos Gradle
+      # 10. Gradle
       # ============================================================
 
       - name: Prepare Gradle
@@ -144,10 +178,10 @@ jobs:
 
 
       # ============================================================
-      # 10. Limpiar
+      # 11. Limpiar
       # ============================================================
 
-      - name: Clean project
+      - name: Clean
         shell: bash
         run: |
           ./gradlew clean \
@@ -156,7 +190,7 @@ jobs:
 
 
       # ============================================================
-      # 11. Compilar APK
+      # 12. Compilar
       # ============================================================
 
       - name: Build Debug APK
@@ -169,13 +203,13 @@ jobs:
 
 
       # ============================================================
-      # 12. Mostrar APK
+      # 13. Buscar APK
       # ============================================================
 
       - name: Locate APK
         shell: bash
         run: |
-          echo "Generated APK files:"
+          echo "APK generado:"
           find app/build/outputs/apk \
             -type f \
             -name "*.apk" \
@@ -183,7 +217,7 @@ jobs:
 
 
       # ============================================================
-      # 13. Subir APK
+      # 14. Descargar APK
       # ============================================================
 
       - name: Upload APK
