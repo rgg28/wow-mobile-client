@@ -203,17 +203,27 @@ jobs:
 
 
       # ============================================================
-      # 13. Compilar (Inyección forzada de argumentos para CMake)
+      # 13. Modificar build.gradle e Iniciar Compilación Nativa
       # ============================================================
 
       - name: Build Debug APK
         shell: bash
         run: |
+          # 1. Definimos la cadena de reemplazo con los argumentos nativos absolutos de OpenSSL
+          NEW_CMAKE_ARGS="arguments '-DANDROID_STL=c++_shared', '-DOPENSSL_ROOT_DIR=${{ github.workspace }}/openssl-android/openssl', '-DOPENSSL_INCLUDE_DIR=${{ github.workspace }}/openssl-android/openssl/include', '-DOPENSSL_CRYPTO_LIBRARY=${{ github.workspace }}/openssl-android/openssl/lib/libcrypto.a', '-DOPENSSL_SSL_LIBRARY=${{ github.workspace }}/openssl-android/openssl/lib/libssl.a', '-DOPENSSL_USE_STATIC_LIBS=TRUE'"
+          
+          # 2. Reemplazamos la línea estática dentro del build.gradle usando sed
+          sed -i "s|arguments \"-DANDROID_STL=c++_shared\"|$NEW_CMAKE_ARGS|g" app/build.gradle
+          
+          # 3. Imprimimos el bloque modificado en pantalla para confirmar la inyección
+          echo "=== app/build.gradle modificado de forma exitosa ==="
+          cat app/build.gradle | grep -A 4 "externalNativeBuild {"
+          
+          # 4. Compilamos la aplicación
           gradle :app:assembleDebug \
             --no-daemon \
             --stacktrace \
-            --info \
-            -Pandroid.externalNativeBuild.cmake.arguments="-DOPENSSL_ROOT_DIR=${{ github.workspace }}/openssl-android/openssl -DOPENSSL_INCLUDE_DIR=${{ github.workspace }}/openssl-android/openssl/include -DOPENSSL_CRYPTO_LIBRARY=${{ github.workspace }}/openssl-android/openssl/lib/libcrypto.a -DOPENSSL_SSL_LIBRARY=${{ github.workspace }}/openssl-android/openssl/lib/libssl.a -DOPENSSL_USE_STATIC_LIBS=TRUE"
+            --info
 
 
       # ============================================================
