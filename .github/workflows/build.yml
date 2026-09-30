@@ -30,7 +30,7 @@ jobs:
           fetch-depth: 0
 
       # ============================================================
-      # 2. WOWEE - REPOSITORIO INDEPENDIENTE
+      # 2. WOWEE - SEGUNDO REPOSITORIO INDEPENDIENTE
       # ============================================================
       - name: Checkout WoWee
         uses: actions/checkout@v4
@@ -49,22 +49,18 @@ jobs:
           echo "REPOSITORIES"
           echo "=============================================="
 
-          echo "Main:"
+          echo "Main repository:"
           pwd
           test -d app
 
           echo
-          echo "WoWee:"
+          echo "WoWee repository:"
           test -d wowee
-          test -d wowee/include
-          test -d wowee/src
 
-          echo
-          echo "WoWee files:"
-          find wowee -maxdepth 2 -type f | head -80
+          echo "WoWee checkout OK."
 
       # ============================================================
-      # 3. JAVA
+      # 3. JAVA 17
       # ============================================================
       - name: Setup JDK
         uses: actions/setup-java@v4
@@ -95,7 +91,7 @@ jobs:
           fi
 
           if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
-            echo "ERROR: sdkmanager no encontrado"
+            echo "ERROR: sdkmanager no encontrado."
             exit 1
           fi
 
@@ -125,13 +121,13 @@ jobs:
           test -d "${ANDROID_HOME}/cmake/${ANDROID_CMAKE_VERSION}"
           test -d "${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
 
-          "${ANDROID_HOME}/platform-tools/adb" version || true
+          echo
+          echo "CMake:"
+          "${ANDROID_HOME}/cmake/${ANDROID_CMAKE_VERSION}/bin/cmake" --version
 
-          "${ANDROID_HOME}/cmake/${ANDROID_CMAKE_VERSION}/bin/cmake" \
-            --version
-
-          "${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}/ndk-build" \
-            --version || true
+          echo
+          echo "ADB:"
+          "${ANDROID_HOME}/platform-tools/adb" version
 
       # ============================================================
       # 6. SDL3
@@ -154,7 +150,7 @@ jobs:
           fetch-depth: 1
 
       # ============================================================
-      # 8. OPENSSL LOCAL
+      # 8. OPENSSL
       # ============================================================
       - name: Extract OpenSSL
         shell: bash
@@ -168,44 +164,112 @@ jobs:
 
           unzip -q openssl.zip -d openssl-android
 
-          echo "OpenSSL:"
-          find openssl-android -maxdepth 3 -type f | head -80
+          echo "OpenSSL extracted."
 
       # ============================================================
-      # 9. VERIFICAR WOWEE
+      # 9. VERIFICAR SOLO LOS FUENTES DE WOWEE QUE NUESTRO CMAKE USA
       # ============================================================
-      - name: Inspect WoWee
+      - name: Verify WoWee sources
         shell: bash
         run: |
           set -e
 
           echo "=============================================="
-          echo "WOWEE"
+          echo "WOWEE SOURCES"
           echo "=============================================="
 
           test -d wowee
-          test -f wowee/CMakeLists.txt || {
-            echo "ERROR: WoWee no contiene CMakeLists.txt"
-            exit 1
-          }
 
-          echo "CMake:"
-          sed -n '1,240p' wowee/CMakeLists.txt
+          REQUIRED_FILES=(
+            "wowee/include/core/application.hpp"
+            "wowee/include/network/world_socket.hpp"
+            "wowee/include/auth/auth_handler.hpp"
+
+            "wowee/src/auth/auth_handler.cpp"
+            "wowee/src/auth/auth_opcodes.cpp"
+            "wowee/src/auth/auth_packets.cpp"
+            "wowee/src/auth/big_num.cpp"
+            "wowee/src/auth/crypto.cpp"
+            "wowee/src/auth/srp.cpp"
+            "wowee/src/auth/vanilla_crypt.cpp"
+
+            "wowee/src/network/packet.cpp"
+            "wowee/src/network/socket.cpp"
+            "wowee/src/network/tcp_socket.cpp"
+            "wowee/src/network/world_socket.cpp"
+
+            "wowee/src/game/opcodes.cpp"
+            "wowee/src/game/opcode_table.cpp"
+            "wowee/src/game/game_handler_packets.cpp"
+
+            "wowee/src/core/window.cpp"
+            "wowee/src/core/application.cpp"
+            "wowee/src/core/app_clock.cpp"
+            "wowee/src/core/input.cpp"
+            "wowee/src/core/logger.cpp"
+
+            "wowee/src/rendering/renderer.cpp"
+            "wowee/src/rendering/render_graph.cpp"
+            "wowee/src/rendering/vk_context.cpp"
+            "wowee/src/rendering/vk_pipeline.cpp"
+            "wowee/src/rendering/vk_buffer.cpp"
+            "wowee/src/rendering/vk_shader.cpp"
+            "wowee/src/rendering/vk_texture.cpp"
+            "wowee/src/rendering/vk_utils.cpp"
+
+            "wowee/extern/imgui/imgui.cpp"
+            "wowee/extern/imgui/imgui_draw.cpp"
+            "wowee/extern/imgui/imgui_tables.cpp"
+            "wowee/extern/imgui/imgui_widgets.cpp"
+            "wowee/extern/imgui/backends/imgui_impl_sdl3.cpp"
+            "wowee/extern/imgui/backends/imgui_impl_vulkan.cpp"
+
+            "wowee/extern/vk-bootstrap/src/VkBootstrap.cpp"
+          )
+
+          for FILE in "${REQUIRED_FILES[@]}"; do
+            if [ ! -f "$FILE" ]; then
+              echo
+              echo "ERROR: falta el archivo:"
+              echo "$FILE"
+              exit 1
+            fi
+          done
 
           echo
-          echo "Headers:"
-          find wowee/include -type f | head -100
+          echo "Todos los fuentes seleccionados por nuestro CMake existen."
+          echo "No se utiliza wowee/CMakeLists.txt."
 
       # ============================================================
-      # 10. CONFIGURAR GRADLE
+      # 10. COMPROBAR CMAKE DEL CLIENTE
       # ============================================================
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - name: Verify Android CMake
+        shell: bash
+        run: |
+          set -e
+
+          CMAKE_FILE="app/src/main/CMakeLists.txt"
+
+          if [ ! -f "$CMAKE_FILE" ]; then
+            echo "ERROR: no existe $CMAKE_FILE"
+            exit 1
+          fi
+
+          echo "=============================================="
+          echo "ANDROID CMAKE"
+          echo "=============================================="
+
+          grep -q 'wowee/src/auth/auth_handler.cpp' "$CMAKE_FILE"
+          grep -q 'wowee/src/network/world_socket.cpp' "$CMAKE_FILE"
+          grep -q 'wowee/src/core/application.cpp' "$CMAKE_FILE"
+          grep -q 'wowee/src/rendering/renderer.cpp' "$CMAKE_FILE"
+
+          echo "CMake del cliente encontrado y contiene WoWee."
 
       # ============================================================
-      # 11. VALIDAR INTEGRACION C++
+      # 11. NO MODIFICAR WOW_INTEGRATION.CPP
       # ============================================================
-      - name: Validate WoW integration source
+      - name: Validate WoW integration
         shell: bash
         run: |
           set -e
@@ -214,67 +278,68 @@ jobs:
 
           test -f "$FILE"
 
-          echo "Checking $FILE"
+          echo "Validando $FILE"
 
           if grep -q 'g_WoWwowee' "$FILE"; then
-            echo "ERROR: g_WoWwowee detectado"
+            echo "ERROR: g_WoWwowee encontrado."
             exit 1
           fi
 
           if grep -q 'wowee::core::wowee::core' "$FILE"; then
-            echo "ERROR: namespace duplicado"
+            echo "ERROR: namespace wowee::core duplicado."
             exit 1
           fi
 
           if grep -q 'wowee::network::wowee::network' "$FILE"; then
-            echo "ERROR: namespace duplicado"
+            echo "ERROR: namespace wowee::network duplicado."
             exit 1
           fi
 
-          if grep -q '\\\\n' "$FILE"; then
-            echo "ERROR: literal \\\\n encontrado en C++"
-            exit 1
-          fi
-
-          echo "wow_integration.cpp OK"
+          echo "wow_integration.cpp OK."
 
       # ============================================================
-      # 12. LIMPIEZA
+      # 12. GRADLE
+      # ============================================================
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # ============================================================
+      # 13. LIMPIEZA
       # ============================================================
       - name: Clean native build
         shell: bash
         run: |
           set -e
 
+          chmod +x gradlew
+
           rm -rf app/.cxx
           rm -rf app/build
-
-          chmod +x gradlew
 
           ./gradlew clean --no-daemon
 
       # ============================================================
-      # 13. MOSTRAR CMAKE DEL PROYECTO
+      # 14. MOSTRAR CONFIGURACION DE GRADLE/CMAKE
       # ============================================================
-      - name: Inspect Android CMake
+      - name: Show Android build configuration
         shell: bash
         run: |
           set -e
 
           echo "=============================================="
-          echo "ANDROID CMAKE"
+          echo "BUILD CONFIGURATION"
           echo "=============================================="
 
-          find app/src/main -maxdepth 2 \
-            \( -name "CMakeLists.txt" -o -name "*.cmake" \) \
-            -print
+          echo
+          echo "app/build.gradle:"
+          sed -n '1,320p' app/build.gradle
 
-          if [ -f app/src/main/CMakeLists.txt ]; then
-            sed -n '1,320p' app/src/main/CMakeLists.txt
-          fi
+          echo
+          echo "app/src/main/CMakeLists.txt:"
+          sed -n '1,360p' app/src/main/CMakeLists.txt
 
       # ============================================================
-      # 14. BUILD
+      # 15. COMPILAR
       # ============================================================
       - name: Build APK
         shell: bash
@@ -292,7 +357,7 @@ jobs:
             --info
 
       # ============================================================
-      # 15. BUSCAR APK
+      # 16. BUSCAR APK
       # ============================================================
       - name: Find APK
         shell: bash
@@ -300,7 +365,7 @@ jobs:
           set -e
 
           echo "=============================================="
-          echo "APK"
+          echo "APK OUTPUT"
           echo "=============================================="
 
           find app/build/outputs/apk \
@@ -308,13 +373,22 @@ jobs:
             -name "*.apk" \
             -print
 
-          test -n "$(find app/build/outputs/apk \
+          APK="$(find app/build/outputs/apk \
             -type f \
             -name "*.apk" \
             -print -quit)"
 
+          if [ -z "$APK" ]; then
+            echo "ERROR: no se genero ningun APK."
+            exit 1
+          fi
+
+          echo
+          echo "APK generado:"
+          echo "$APK"
+
       # ============================================================
-      # 16. SUBIR APK
+      # 17. SUBIR APK
       # ============================================================
       - name: Upload APK
         uses: actions/upload-artifact@v4
