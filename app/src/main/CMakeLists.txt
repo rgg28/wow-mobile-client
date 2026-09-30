@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ============================================================
-# 1. Inclusión de Directorios de Cabeceras
+# 1. Inclusión de Directorios de Cabeceras Globales
 # ============================================================
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}                                 # Tu carpeta main
@@ -14,11 +14,9 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../wowee/extern/vk-bootstrap/src
 )
 
-# Inyección forzada de la ruta absoluta de GLM enviada por Actions
+# Captura la inyección forzada de GLM oficial descargada desde Actions
 if(GLM_INCLUDE_DIR)
     include_directories(${GLM_INCLUDE_DIR})
-else()
-    include_directories(${CMAKE_CURRENT_BINARY_DIR}/_deps/glm-src)
 endif()
 
 if(OPENSSL_INCLUDE_DIR)
@@ -32,7 +30,7 @@ add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../../sdl3" sdl3_build)
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../../../sdl3/include")
 
 # ============================================================
-# 3. Definición del Target (Tus Fuentes + Módulos de WoWee)
+# 3. Definición del Target (wow_engine + wow_integration + WoWee)
 # ============================================================
 add_library(wowmobile SHARED
     wow_engine.cpp
