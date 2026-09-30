@@ -160,20 +160,15 @@ jobs:
 
 
       # ============================================================
-      # 10. Comprobar WoWee
+      # 10. Clonar rama oficial de SDL3 para Android
       # ============================================================
 
-      - name: Check WoWee
-        shell: bash
-        run: |
-          test -f wowee/CMakeLists.txt
-          test -d wowee/src
-
-          echo "WoWee CMake:"
-          ls -lh wowee/CMakeLists.txt
-
-          echo "WoWee source directories:"
-          find wowee/src -maxdepth 2 -type d | sort
+      - name: Checkout SDL3 official
+        uses: actions/checkout@v4
+        with:
+          repository: libsdl-org/SDL
+          ref: main
+          path: sdl3
 
 
       # ============================================================
@@ -203,28 +198,46 @@ jobs:
 
 
       # ============================================================
-      # 13. Parchear build.gradle + CMakeLists e Iniciar Compilación
+      # 13. Modificar build.gradle e inyectar parches de SDL3 y GLM
       # ============================================================
 
       - name: Build Debug APK
         shell: bash
         run: |
-          # 1. Definimos la cadena de reemplazo con los argumentos nativos absolutos de OpenSSL
+          # 1. Definimos los argumentos nativos de OpenSSL absolutos para CMake
           NEW_CMAKE_ARGS="arguments '-DANDROID_STL=c++_shared', '-DOPENSSL_ROOT_DIR=${{ github.workspace }}/openssl-android/openssl', '-DOPENSSL_INCLUDE_DIR=${{ github.workspace }}/openssl-android/openssl/include', '-DOPENSSL_CRYPTO_LIBRARY=${{ github.workspace }}/openssl-android/openssl/lib/libcrypto.a', '-DOPENSSL_SSL_LIBRARY=${{ github.workspace }}/openssl-android/openssl/lib/libssl.a', '-DOPENSSL_USE_STATIC_LIBS=TRUE'"
           
-          # 2. Reemplazamos la línea estática dentro del build.gradle usando sed
+          # 2. Inyectamos los argumentos en el archivo build.gradle
           sed -i "s|arguments \"-DANDROID_STL=c++_shared\"|$NEW_CMAKE_ARGS|g" app/build.gradle
           
-          # 3. PARCHE DE CONTROL ESTRUCTURAL DE CMAKE:
-          # El error original indica que el target "wowmobile" no existe al momento de llamarlo en la l.218.
-          # Cambiamos "wowmobile" por la macro estándar de Android Studio para inyectar los includes de forma global.
+          # 3. PARCHE PARA INCORPORAR SDL3 Y ELIMINAR EL ERROR DE TARGET NATIVO "wowmobile"
+          # Agregamos el subdirectorio de SDL3 descargado al inicio del CMakeLists principal para que cree el target
+          sed -i '1s|^|add_subdirectory("${{ github.workspace }}/sdl3" sdl3_build)\n|' app/src/main/CMakeLists.txt
+          
+          # Cambiamos la regla rota de target_include_directories por un include_directories global para evitar errores de orden
           sed -i 's|target_include_directories(wowmobile|include_directories(|g' app/src/main/CMakeLists.txt
           
-          # 4. Imprimimos el bloque modificado en pantalla para confirmar la inyección de Gradle
-          echo "=== app/build.gradle modificado de forma exitosa ==="
-          cat app/build.gradle | grep -A 4 "externalNativeBuild {"
+          # 4. PARCHE PARA MAPEAR HEADER DE GLM
+          # Buscamos de forma dinámica el directorio raíz de la carpeta de GLM (donde vive glm/glm.hpp)
+          GLM_PATH="${{ github.workspace }}/wowee/extern/glm"
+          if [ ! -d "$GLM_PATH" ]; then
+            GLM_PATH="${{ github.workspace }}/wowee/third_party/glm"
+          fi
+          # Si se encuentra en una estructura de submódulo estándar de CMake, puede requerir apuntar un nivel arriba
+          if [ -d "$GLM_PATH/glm" ]; then
+             sed -i "s|include_directories(|include_directories(\"${GLM_PATH}\" |g" app/src/main/CMakeLists.txt
+          else
+             sed -i "s|include_directories(|include_directories(\"${{ github.workspace }}/wowee/extern\" \"${{ github.workspace }}/wowee/third_party\" |g" app/src/main/CMakeLists.txt
+          fi
           
-          # 5. Compilamos la aplicación
+          # Forzamos la inclusión del directorio de headers del propio SDL3 para los archivos fuentes de WoWee
+          sed -i "s|include_directories(|include_directories(\"${key}\" \"${{ github.workspace }}/sdl3/include\" |g" app/src/main/CMakeLists.txt
+          
+          # 5. Verificación visual rápida de la inyección nativa
+          echo "=== Contenido superior de app/src/main/CMakeLists.txt ==="
+          head -n 25 app/src/main/CMakeLists.txt
+          
+          # 6. Compilación final
           gradle :app:assembleDebug \
             --no-daemon \
             --stacktrace \
