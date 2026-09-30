@@ -52,7 +52,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.5' # <--- Cambia esto por la versión de Gradle que requiera tu proyecto (ej: 8.5, 8.7, etc.)
+          gradle-version: '8.9' # <--- Cambia esto por la versión de Gradle que requiera tu proyecto (ej: 8.5, 8.7, etc.)
 
 
       # ============================================================
