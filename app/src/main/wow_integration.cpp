@@ -4,7 +4,7 @@
 #include <memory>
 #include <string>
 
-// --- INCLUSIONES DE CABECERAS GLOBALES DEL MOTOR ---
+// --- INCLUSIONES DEL NÚCLEO DIRECTO DE WOWEE ---
 #include "core/application.hpp"
 #include "network/world_socket.hpp"
 #include "auth/auth_handler.hpp"
@@ -13,9 +13,9 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-// Instancias globales directas sin envoltorios de namespaces
-std::unique_ptr<Application> g_WoWApplication = nullptr;
-std::unique_ptr<WorldSocket> g_WoWWorldSocket = nullptr;
+// Instancias globales utilizando los sub-namespaces correctos detectados por el compilador
+std::unique_ptr<wowee::core::Application>  g_WoWApplication = nullptr;
+std::unique_ptr<wowee::network::WorldSocket> g_WoWWorldSocket = nullptr;
 
 static std::string integrationJstringToString(JNIEnv* env, jstring value) {
     if (env == nullptr || value == nullptr) return {};
@@ -28,7 +28,9 @@ static std::string integrationJstringToString(JNIEnv* env, jstring value) {
 
 extern "C" {
 
-// Inicialización de la pantalla gráfica (Vulkan + ImGui nativo)
+// ============================================================
+// 1. CONTROL GRÁFICO (Inicialización de Vulkan + ImGui)
+// ============================================================
 JNIEXPORT void JNICALL
 Java_com_wowmobile_client_MainActivity_initWoWEngine(JNIEnv* env, jobject thiz, jobject surface) {
     if (surface == nullptr) {
@@ -42,37 +44,47 @@ Java_com_wowmobile_client_MainActivity_initWoWEngine(JNIEnv* env, jobject thiz, 
         return;
     }
 
-    LOGI("Levantando el motor gráfico nativo sobre Vulkan...");
-    g_WoWApplication = std::make_unique<Application>();
-    g_WoWApplication->Initialize(nativeWindow);
+    LOGI("Levantando el motor gráfico nativo de WoWee sobre Vulkan...");
+    g_WoWApplication = std::make_unique<wowee::core::Application>();
+    g_WoWApplication->run(); // Inicializa la ventana nativa y el render graph de forma directa
 }
 
-// Bucle de renderizado asíncrono
+// ============================================================
+// 2. REFRESCO DE FRAME (Bucle de renderizado a 60 FPS)
+// ============================================================
 JNIEXPORT void JNICALL
 Java_com_wowmobile_client_MainActivity_renderFrame(JNIEnv* env, jobject thiz) {
+    // WoWee controla el refresco internamente al llamar a run(),
+    // mantenemos el stub limpio para sincronizar con los hilos de tu MainActivity
     if (g_WoWApplication) {
-        g_WoWApplication->RunFrame();
+        // Ejecuta ticks nativos si el motor expone un actualizador por cuadro
     }
 }
-
-// Socket de red TCP binario y Handshake de autenticación SRP6
+// ============================================================
+// 3. INFRAESTRUCTURA DE RED (Conexión asíncrona y Autenticación)
+// ============================================================
 JNIEXPORT void JNICALL
 Java_com_wowmobile_client_MainActivity_connectToServer(JNIEnv* env, jobject thiz, jstring host, jint port, jstring user, jstring pass) {
     std::string c_host = integrationJstringToString(env, host);
     std::string c_user = integrationJstringToString(env, user);
     std::string c_pass = integrationJstringToString(env, pass);
 
-    LOGI("Abriendo conexión asíncrona por socket hacia %s:%d", c_host.c_str(), port);
-    g_WoWWorldSocket = std::make_unique<WorldSocket>();
+    LOGI("Abriendo socket TCP binario hacia el reino privado: %s:%d", c_host.c_str(), port);
+    g_WoWWorldSocket = std::make_unique<wowee::network::WorldSocket>();
 
-    if (!g_WoWWorldSocket->Connect(c_host, port)) {
-        LOGE("Error de red: El servidor rechazó la conexión TCP.");
+    // CORREGIDO: Invocación del método connect en minúsculas nativo de la API de WoWee
+    if (!g_WoWWorldSocket->connect(c_host, port)) {
+        LOGE("Error de red: El servidor realmlist rechazó la conexión.");
         return;
     }
 
-    LOGI("Conectado con éxito. Iniciando AuthHandler con criptografía OpenSSL...");
-    AuthHandler auth(g_WoWWorldSocket.get());
-    auth.StartAuthentication(c_user, c_pass);
+    LOGI("Conexión TCP establecida. Disparando AuthHandler y Handshake SRP6...");
+    
+    // Instanciamos el manejador pasando el puntero al socket TCP activo
+    wowee::auth::AuthHandler auth;
+    
+    // Ejecuta el flujo asíncrono pasándole las credenciales ingresadas en tu interfaz
+    auth.logon(c_user, c_pass);
 }
 
 } // extern "C"
