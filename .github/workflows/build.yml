@@ -43,11 +43,20 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
 
 
       # ============================================================
-      # 4. Localizar Android SDK
+      # 4. Configurar Gradle (Solución al error del gradlew)
+      # ============================================================
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.5' # <--- Cambia esto por la versión de Gradle que requiera tu proyecto (ej: 8.5, 8.7, etc.)
+
+
+      # ============================================================
+      # 5. Localizar Android SDK
       # ============================================================
 
       - name: Configure Android SDK
@@ -84,7 +93,7 @@ jobs:
 
 
       # ============================================================
-      # 5. Aceptar licencias
+      # 6. Aceptar licencias
       # ============================================================
 
       - name: Accept Android licenses
@@ -94,7 +103,7 @@ jobs:
 
 
       # ============================================================
-      # 6. Instalar herramientas Android
+      # 7. Instalar herramientas Android
       # ============================================================
 
       - name: Install Android toolchain
@@ -109,7 +118,7 @@ jobs:
 
 
       # ============================================================
-      # 7. Verificar toolchain
+      # 8. Verificar toolchain
       # ============================================================
 
       - name: Verify Android toolchain
@@ -134,7 +143,7 @@ jobs:
 
 
       # ============================================================
-      # 8. Preparar WoWee
+      # 9. Preparar WoWee
       # ============================================================
 
       - name: Prepare WoWee
@@ -151,7 +160,7 @@ jobs:
 
 
       # ============================================================
-      # 9. Comprobar WoWee
+      # 10. Comprobar WoWee
       # ============================================================
 
       - name: Check WoWee
@@ -168,35 +177,25 @@ jobs:
 
 
       # ============================================================
-      # 10. Gradle
-      # ============================================================
-
-      - name: Prepare Gradle
-        shell: bash
-        run: |
-          chmod +x ./gradlew
-
-
-      # ============================================================
-      # 11. Limpiar
+      # 11. Limpiar (Usando 'gradle' global)
       # ============================================================
 
       - name: Clean
         shell: bash
         run: |
-          ./gradlew clean \
+          gradle clean \
             --no-daemon \
             --stacktrace
 
 
       # ============================================================
-      # 12. Compilar
+      # 12. Compilar (Usando 'gradle' global)
       # ============================================================
 
       - name: Build Debug APK
         shell: bash
         run: |
-          ./gradlew :app:assembleDebug \
+          gradle :app:assembleDebug \
             --no-daemon \
             --stacktrace \
             --info
