@@ -2,568 +2,305 @@ package com.wowmobile.client;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.graphics.Color;
-import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.graphics.Color;
+import android.graphics.Typeface;
 import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.Surface;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.documentfile.provider.DocumentFile;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 
 public class MainActivity extends Activity {
 
-    private static final int REQUEST_FOLDER = 1001;
-    private static final String PREFS = "wow_mobile";
-    private static final String PREF_URI = "wow_root_uri";
+    private static final int REQUEST_WOW_FOLDER = 5001;
 
-    private Uri wowRootUri;
+    private LinearLayout root;
+    private LinearLayout content;
 
-    private LinearLayout rootLayout;
-    private TextView statusText;
-    private TextView contentText;
+    private Uri wowTreeUri;
+    private DocumentFile wowRoot;
 
-    private Button selectFolderButton;
-    private Button continueButton;
-
-    private LinearLayout loginPanel;
-    private EditText usernameEdit;
-    private EditText passwordEdit;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     static {
         System.loadLibrary("wowmobile");
     }
 
+    // ------------------------------------------------------------
+    // JNI
+    // ------------------------------------------------------------
+
     private native void nativeInit();
+    private native void nativeSetWowFolder(String treeUri);
+    private native void nativeInspectRoot();
 
-    private native void nativeSetWowFolder(String uri);
+    private native void nativeRendererSetBackend(int backend);
+    private native void nativeRendererSetSurface(Surface surface);
+    private native void nativeRendererResize(int width, int height);
+    private native void nativeRendererStop();
 
-    private native String nativeInspectRoot();
+    private native void nativeRendererCamera(float x, float y);
+    private native void nativeRendererZoom(float delta);
 
-    private native String nativeListDirectory(
-            String relativePath
+    private native int nativeRendererGetBackend();
+
+    private native boolean nativeRendererLoadCharacter(
+            byte[] m2Data,
+            byte[] skinData
     );
 
-    private native String nativeReadResource(
-            String relativePath
+    private native boolean nativeRendererLoadWorld(
+            byte[] adtData
     );
 
-    private native String nativeLogin(
-            String username,
-            String password
-    );
+    // ------------------------------------------------------------
+    // COLORES
+    // ------------------------------------------------------------
+
+    private int bg() {
+        return Color.rgb(5, 10, 20);
+    }
+
+    private int panel() {
+        return Color.rgb(11, 20, 35);
+    }
+
+    private int panel2() {
+        return Color.rgb(15, 28, 48);
+    }
+
+    private int gold() {
+        return Color.rgb(218, 168, 72);
+    }
+
+    private int goldBright() {
+        return Color.rgb(245, 200, 95);
+    }
+
+    private int text() {
+        return Color.rgb(225, 231, 240);
+    }
+
+    private int textDim() {
+        return Color.rgb(145, 158, 180);
+    }
+
+    // ------------------------------------------------------------
+    // ACTIVITY
+    // ------------------------------------------------------------
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-
         super.onCreate(savedInstanceState);
+
+        getWindow().setNavigationBarColor(bg());
+        getWindow().setStatusBarColor(bg());
 
         nativeInit();
 
-        buildMainUI();
-
-        loadSavedFolder();
+        showFolderScreen();
     }
 
-    // =========================================================
-    // UI
-    // =========================================================
+    @Override
+    protected void onDestroy() {
+        try {
+            nativeRendererStop();
+        } catch (Exception ignored) {
+        }
 
-    private void buildMainUI() {
+        super.onDestroy();
+    }
 
-        rootLayout =
-                new LinearLayout(this);
+    // ------------------------------------------------------------
+    // BASE UI
+    // ------------------------------------------------------------
 
-        rootLayout.setOrientation(
-                LinearLayout.VERTICAL
+    private LinearLayout createBase() {
+
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setGravity(Gravity.CENTER);
+        layout.setPadding(dp(28), dp(20), dp(28), dp(20));
+        layout.setBackgroundColor(bg());
+
+        return layout;
+    }
+
+    private TextView title(String value, float size) {
+
+        TextView v = new TextView(this);
+
+        v.setText(value);
+        v.setTextColor(goldBright());
+        v.setTextSize(size);
+        v.setGravity(Gravity.CENTER);
+        v.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        v.setPadding(0, dp(6), 0, dp(6));
+
+        return v;
+    }
+
+    private TextView label(String value) {
+
+        TextView v = new TextView(this);
+
+        v.setText(value);
+        v.setTextColor(textDim());
+        v.setTextSize(15);
+        v.setGravity(Gravity.CENTER);
+        v.setPadding(dp(8), dp(8), dp(8), dp(8));
+
+        return v;
+    }
+
+    private Button button(String value) {
+
+        Button b = new Button(this);
+
+        b.setText(value);
+        b.setTextColor(Color.WHITE);
+        b.setTextSize(15);
+        b.setAllCaps(false);
+        b.setBackgroundColor(panel2());
+        b.setPadding(dp(20), dp(8), dp(20), dp(8));
+
+        return b;
+    }
+
+    private EditText edit(String hint, boolean password) {
+
+        EditText e = new EditText(this);
+
+        e.setHint(hint);
+        e.setHintTextColor(textDim());
+        e.setTextColor(Color.WHITE);
+        e.setTextSize(16);
+        e.setSingleLine(true);
+        e.setPadding(dp(16), 0, dp(16), 0);
+        e.setBackgroundColor(panel2());
+
+        if (password) {
+            e.setInputType(
+                    android.text.InputType.TYPE_CLASS_TEXT |
+                    android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            );
+        }
+
+        LinearLayout.LayoutParams p =
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dp(52)
+                );
+
+        p.setMargins(0, dp(6), 0, dp(6));
+        e.setLayoutParams(p);
+
+        return e;
+    }
+
+    private void setScreen(View view) {
+        setContentView(view);
+    }
+
+    private int dp(int value) {
+        return (int) (
+                value * getResources().getDisplayMetrics().density + 0.5f
+        );
+    }
+
+    // ------------------------------------------------------------
+    // 1. SELECCION CLIENTE
+    // ------------------------------------------------------------
+
+    private void showFolderScreen() {
+
+        root = createBase();
+
+        TextView logo = title("WORLD OF WARCRAFT", 27);
+        root.addView(
+                logo,
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dp(60)
+                )
         );
 
-        rootLayout.setPadding(
-                dp(24),
+        TextView subtitle = title("MOBILE CLIENT", 15);
+        subtitle.setTextColor(textDim());
+
+        root.addView(subtitle);
+
+        TextView info = label(
+                "Selecciona la carpeta raíz de tu cliente\n" +
+                "WoW 3.3.5a · Build 12340"
+        );
+
+        info.setPadding(
                 dp(20),
-                dp(24),
+                dp(30),
+                dp(20),
                 dp(20)
         );
 
-        rootLayout.setBackgroundColor(
-                Color.rgb(7, 12, 24)
-        );
+        root.addView(info);
 
-        setContentView(rootLayout);
+        Button select = button("SELECCIONAR CARPETA DEL CLIENTE");
 
-        TextView title =
-                new TextView(this);
+        select.setOnClickListener(v -> openFolderPicker());
 
-        title.setText(
-                "WORLD OF WARCRAFT"
-        );
-
-        title.setTextColor(
-                Color.rgb(236, 191, 82)
-        );
-
-        title.setTextSize(26);
-
-        title.setTypeface(
-                Typeface.DEFAULT,
-                Typeface.BOLD
-        );
-
-        title.setGravity(
-                Gravity.CENTER
-        );
-
-        rootLayout.addView(
-                title,
+        LinearLayout.LayoutParams bp =
                 new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        dp(50)
-                )
-        );
-
-        TextView subtitle =
-                new TextView(this);
-
-        subtitle.setText(
-                "3.3.5a • BUILD 12340 • MOBILE CLIENT"
-        );
-
-        subtitle.setTextColor(
-                Color.rgb(150, 165, 190)
-        );
-
-        subtitle.setTextSize(13);
-
-        subtitle.setGravity(
-                Gravity.CENTER
-        );
-
-        rootLayout.addView(
-                subtitle,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        dp(35)
-                )
-        );
-
-        statusText =
-                new TextView(this);
-
-        statusText.setText(
-                "Selecciona la carpeta raíz del cliente."
-        );
-
-        statusText.setTextColor(
-                Color.WHITE
-        );
-
-        statusText.setTextSize(16);
-
-        statusText.setGravity(
-                Gravity.CENTER
-        );
-
-        statusText.setPadding(
-                dp(10),
-                dp(15),
-                dp(10),
-                dp(15)
-        );
-
-        rootLayout.addView(
-                statusText,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-        );
-
-        contentText =
-                new TextView(this);
-
-        contentText.setTextColor(
-                Color.rgb(190, 200, 220)
-        );
-
-        contentText.setTextSize(14);
-
-        contentText.setPadding(
-                dp(15),
-                dp(15),
-                dp(15),
-                dp(15)
-        );
-
-        contentText.setTextIsSelectable(true);
-
-        ScrollView scroll =
-                new ScrollView(this);
-
-        scroll.setBackgroundColor(
-                Color.rgb(12, 20, 37)
-        );
-
-        scroll.addView(contentText);
-
-        LinearLayout.LayoutParams scrollParams =
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        0
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dp(60)
                 );
 
-        scrollParams.weight = 1;
+        bp.setMargins(0, dp(20), 0, dp(8));
 
-        rootLayout.addView(
-                scroll,
-                scrollParams
+        root.addView(select, bp);
+
+        TextView note = label(
+                "Los archivos permanecen fuera del APK.\n" +
+                "El cliente los lee directamente desde la carpeta seleccionada."
         );
 
-        selectFolderButton =
-                createButton(
-                        "SELECCIONAR CARPETA"
-                );
+        note.setTextSize(12);
 
-        rootLayout.addView(
-                selectFolderButton,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        dp(55)
-                )
-        );
+        root.addView(note);
 
-        selectFolderButton.setOnClickListener(
-                v -> selectWowFolder()
-        );
-
-        continueButton =
-                createButton(
-                        "CONTINUAR"
-                );
-
-        rootLayout.addView(
-                continueButton,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        dp(55)
-                )
-        );
-
-        continueButton.setVisibility(
-                View.GONE
-        );
-
-        continueButton.setOnClickListener(
-                v -> showLogin()
-        );
-
-        createLoginPanel();
-
-        loginPanel.setVisibility(
-                View.GONE
-        );
+        setScreen(root);
     }
 
-    private Button createButton(
-            String text
-    ) {
-
-        Button button =
-                new Button(this);
-
-        button.setText(text);
-
-        button.setTextColor(
-                Color.rgb(10, 15, 25)
-        );
-
-        button.setTextSize(15);
-
-        button.setTypeface(
-                Typeface.DEFAULT,
-                Typeface.BOLD
-        );
-
-        button.setAllCaps(false);
-
-        button.setBackgroundColor(
-                Color.rgb(205, 166, 68)
-        );
-
-        return button;
-    }
-
-    // =========================================================
-    // LOGIN
-    // =========================================================
-
-    private void createLoginPanel() {
-
-        loginPanel =
-                new LinearLayout(this);
-
-        loginPanel.setOrientation(
-                LinearLayout.VERTICAL
-        );
-
-        loginPanel.setPadding(
-                dp(10),
-                dp(15),
-                dp(10),
-                dp(10)
-        );
-
-        TextView loginTitle =
-                new TextView(this);
-
-        loginTitle.setText(
-                "CUENTA"
-        );
-
-        loginTitle.setTextColor(
-                Color.rgb(236, 191, 82)
-        );
-
-        loginTitle.setTextSize(20);
-
-        loginTitle.setGravity(
-                Gravity.CENTER
-        );
-
-        loginPanel.addView(
-                loginTitle,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        dp(45)
-                )
-        );
-
-        usernameEdit =
-                new EditText(this);
-
-        usernameEdit.setHint(
-                "Usuario"
-        );
-
-        usernameEdit.setSingleLine(
-                true
-        );
-
-        usernameEdit.setTextColor(
-                Color.WHITE
-        );
-
-        usernameEdit.setHintTextColor(
-                Color.rgb(120, 130, 150)
-        );
-
-        loginPanel.addView(
-                usernameEdit,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        dp(55)
-                )
-        );
-
-        passwordEdit =
-                new EditText(this);
-
-        passwordEdit.setHint(
-                "Contraseña"
-        );
-
-        passwordEdit.setSingleLine(
-                true
-        );
-
-        passwordEdit.setInputType(
-                android.text.InputType.TYPE_CLASS_TEXT |
-                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-        );
-
-        passwordEdit.setTextColor(
-                Color.WHITE
-        );
-
-        passwordEdit.setHintTextColor(
-                Color.rgb(120, 130, 150)
-        );
-
-        loginPanel.addView(
-                passwordEdit,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        dp(55)
-                )
-        );
-
-        Button loginButton =
-                createButton(
-                        "CONECTAR"
-                );
-
-        loginPanel.addView(
-                loginButton,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        dp(55)
-                )
-        );
-
-        loginButton.setOnClickListener(
-                v -> performLogin()
-        );
-
-        rootLayout.addView(
-                loginPanel,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-        );
-    }
-
-    private void showLogin() {
-
-        continueButton.setVisibility(
-                View.GONE
-        );
-
-        selectFolderButton.setVisibility(
-                View.GONE
-        );
-
-        contentText.setText(
-                "CLIENTE 3.3.5a PREPARADO\n\n" +
-                "Recursos externos:\n" +
-                "BLP • M2 • SKIN • ANIM • SBT\n\n" +
-                "Los archivos se abrirán bajo demanda.\n\n" +
-                "Introduce tus credenciales."
-        );
-
-        statusText.setText(
-                "INICIAR SESIÓN"
-        );
-
-        loginPanel.setVisibility(
-                View.VISIBLE
-        );
-    }
-
-    private void performLogin() {
-
-        String username =
-                usernameEdit
-                        .getText()
-                        .toString()
-                        .trim();
-
-        String password =
-                passwordEdit
-                        .getText()
-                        .toString();
-
-        if (username.isEmpty()) {
-
-            usernameEdit.setError(
-                    "Introduce el usuario"
-            );
-
-            return;
-        }
-
-        if (password.isEmpty()) {
-
-            passwordEdit.setError(
-                    "Introduce la contraseña"
-            );
-
-            return;
-        }
-
-        statusText.setText(
-                "CONECTANDO..."
-        );
-
-        new Thread(() -> {
-
-            String result;
-
-            try {
-
-                result =
-                        nativeLogin(
-                                username,
-                                password
-                        );
-
-            } catch (Exception e) {
-
-                result =
-                        "ERROR: " +
-                        e.getMessage();
-            }
-
-            final String finalResult =
-                    result;
-
-            runOnUiThread(() -> {
-
-                contentText.setText(
-                        finalResult
-                );
-
-                if (finalResult.contains(
-                        "NO IMPLEMENTADO"
-                )) {
-
-                    statusText.setText(
-                            "PROTOCOLO PENDIENTE"
-                    );
-
-                } else {
-
-                    statusText.setText(
-                            "ESTADO DE CONEXIÓN"
-                    );
-                }
-            });
-
-        }).start();
-    }
-
-    // =========================================================
-    // SAF
-    // =========================================================
-
-    private void selectWowFolder() {
+    private void openFolderPicker() {
 
         Intent intent =
-                new Intent(
-                        Intent.ACTION_OPEN_DOCUMENT_TREE
-                );
+                new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
 
-        intent.addFlags(
-                Intent.FLAG_GRANT_READ_URI_PERMISSION |
-                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION |
-                Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
-        );
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        intent.addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
 
         startActivityForResult(
                 intent,
-                REQUEST_FOLDER
+                REQUEST_WOW_FOLDER
         );
     }
 
@@ -580,7 +317,7 @@ public class MainActivity extends Activity {
                 data
         );
 
-        if (requestCode != REQUEST_FOLDER ||
+        if (requestCode != REQUEST_WOW_FOLDER ||
                 resultCode != RESULT_OK ||
                 data == null ||
                 data.getData() == null) {
@@ -588,482 +325,1073 @@ public class MainActivity extends Activity {
             return;
         }
 
-        Uri uri =
-                data.getData();
+        wowTreeUri = data.getData();
 
         try {
 
-            int flags =
-                    data.getFlags() &
-                    (Intent.FLAG_GRANT_READ_URI_PERMISSION |
-                     Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-
-            getContentResolver()
-                    .takePersistableUriPermission(
-                            uri,
-                            flags
-                    );
+            getContentResolver().takePersistableUriPermission(
+                    wowTreeUri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+            );
 
         } catch (Exception ignored) {
         }
 
-        wowRootUri = uri;
-
-        getSharedPreferences(
-                PREFS,
-                MODE_PRIVATE
-        )
-        .edit()
-        .putString(
-                PREF_URI,
-                uri.toString()
-        )
-        .apply();
-
-        nativeSetWowFolder(
-                uri.toString()
-        );
-
-        inspectRootAsync();
-    }
-
-    private void loadSavedFolder() {
-
-        String saved =
-                getSharedPreferences(
-                        PREFS,
-                        MODE_PRIVATE
-                )
-                .getString(
-                        PREF_URI,
-                        null
+        wowRoot =
+                DocumentFile.fromTreeUri(
+                        this,
+                        wowTreeUri
                 );
 
-        if (saved == null ||
-                saved.isEmpty()) {
+        if (wowRoot == null || !wowRoot.isDirectory()) {
+
+            Toast.makeText(
+                    this,
+                    "No se pudo abrir la carpeta.",
+                    Toast.LENGTH_LONG
+            ).show();
 
             return;
         }
 
-        try {
+        nativeSetWowFolder(
+                wowTreeUri.toString()
+        );
 
-            wowRootUri =
-                    Uri.parse(saved);
+        showOfflineMenu();
+    }
 
-            DocumentFile root =
-                    DocumentFile.fromTreeUri(
+    // ------------------------------------------------------------
+    // 2. MENU PRINCIPAL
+    // ------------------------------------------------------------
+
+    private void showOfflineMenu() {
+
+        root = createBase();
+
+        root.addView(title("WORLD OF WARCRAFT", 25));
+
+        root.addView(
+                label(
+                        "CLIENTE DETECTADO\n" +
+                        "Build 12340"
+                )
+        );
+
+        Button login =
+                button("INICIAR SESIÓN");
+
+        login.setOnClickListener(
+                v -> showLogin()
+        );
+
+        root.addView(
+                login,
+                fullButtonParams()
+        );
+
+        Button characters =
+                button("SELECCIÓN DE PERSONAJE");
+
+        characters.setOnClickListener(
+                v -> showCharacterSelection()
+        );
+
+        root.addView(
+                characters,
+                fullButtonParams()
+        );
+
+        Button create =
+                button("CREAR / VISUALIZAR PERSONAJE");
+
+        create.setOnClickListener(
+                v -> showCharacterCreator()
+        );
+
+        root.addView(
+                create,
+                fullButtonParams()
+        );
+
+        Button world =
+                button("ENTRAR AL MUNDO");
+
+        world.setOnClickListener(
+                v -> findAndEnterWorld()
+        );
+
+        root.addView(
+                world,
+                fullButtonParams()
+        );
+
+        Button inspect =
+                button("INSPECCIONAR CLIENTE");
+
+        inspect.setOnClickListener(
+                v -> {
+
+                    nativeInspectRoot();
+
+                    Toast.makeText(
                             this,
-                            wowRootUri
-                    );
+                            "Cliente enviado al motor nativo.",
+                            Toast.LENGTH_SHORT
+                    ).show();
+                }
+        );
 
-            if (root == null ||
-                    !root.canRead()) {
+        root.addView(
+                inspect,
+                fullButtonParams()
+        );
+
+        setScreen(root);
+    }
+
+    private LinearLayout.LayoutParams fullButtonParams() {
+
+        LinearLayout.LayoutParams p =
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dp(58)
+                );
+
+        p.setMargins(
+                dp(20),
+                dp(7),
+                dp(20),
+                dp(7)
+        );
+
+        return p;
+    }
+
+    // ------------------------------------------------------------
+    // 3. LOGIN
+    // ------------------------------------------------------------
+
+    private void showLogin() {
+
+        root = createBase();
+
+        root.addView(
+                title("INICIAR SESIÓN", 24)
+        );
+
+        root.addView(
+                label(
+                        "Conexión WoW 3.3.5a"
+                )
+        );
+
+        EditText username =
+                edit("Nombre de usuario", false);
+
+        EditText password =
+                edit("Contraseña", true);
+
+        root.addView(username);
+        root.addView(password);
+
+        Button connect =
+                button("CONECTAR");
+
+        connect.setOnClickListener(v -> {
+
+            String user =
+                    username.getText()
+                            .toString()
+                            .trim();
+
+            String pass =
+                    password.getText()
+                            .toString();
+
+            if (user.isEmpty() || pass.isEmpty()) {
+
+                Toast.makeText(
+                        this,
+                        "Introduce usuario y contraseña.",
+                        Toast.LENGTH_SHORT
+                ).show();
 
                 return;
             }
 
-            nativeSetWowFolder(
-                    wowRootUri.toString()
-            );
+            Toast.makeText(
+                    this,
+                    "La interfaz está preparada para AUTH SRP6.",
+                    Toast.LENGTH_LONG
+            ).show();
 
-            inspectRootAsync();
+            /*
+             * Aquí se conectará posteriormente:
+             *
+             * AUTH_LOGON_CHALLENGE
+             * AUTH_LOGON_PROOF
+             * REALM_LIST
+             *
+             * No simulamos una conexión real.
+             */
 
-        } catch (Exception e) {
+        });
 
-            contentText.setText(
-                    "No se pudo abrir la carpeta guardada.\n\n" +
-                    e.getMessage()
-            );
-        }
+        root.addView(
+                connect,
+                fullButtonParams()
+        );
+
+        Button back =
+                button("VOLVER");
+
+        back.setOnClickListener(
+                v -> showOfflineMenu()
+        );
+
+        root.addView(
+                back,
+                fullButtonParams()
+        );
+
+        setScreen(root);
     }
 
-    // =========================================================
-    // INSPECCIÓN
-    // =========================================================
+    // ------------------------------------------------------------
+    // 4. SELECCION PERSONAJE
+    // ------------------------------------------------------------
 
-    private void inspectRootAsync() {
+    private void showCharacterSelection() {
 
-        statusText.setText(
-                "ANALIZANDO CLIENTE..."
+        root = createBase();
+
+        root.addView(
+                title("SELECCIÓN DE PERSONAJE", 23)
         );
 
-        contentText.setText(
-                "Comprobando estructura...\n\n" +
-                "No se realizará un escaneo recursivo."
+        TextView charInfo =
+                label(
+                        "ARTHAS\n" +
+                        "Nivel 80 · Paladín\n" +
+                        "Personaje de prueba"
+                );
+
+        charInfo.setTextSize(18);
+        charInfo.setTextColor(text());
+
+        root.addView(
+                charInfo
         );
+
+        Button enter =
+                button("ENTRAR AL MUNDO");
+
+        enter.setOnClickListener(
+                v -> findAndEnterWorld()
+        );
+
+        root.addView(
+                enter,
+                fullButtonParams()
+        );
+
+        Button create =
+                button("CREAR / VISUALIZAR");
+
+        create.setOnClickListener(
+                v -> showCharacterCreator()
+        );
+
+        root.addView(
+                create,
+                fullButtonParams()
+        );
+
+        Button back =
+                button("VOLVER");
+
+        back.setOnClickListener(
+                v -> showOfflineMenu()
+        );
+
+        root.addView(
+                back,
+                fullButtonParams()
+        );
+
+        setScreen(root);
+    }
+
+    // ------------------------------------------------------------
+    // 5. RENDER PERSONAJE
+    // ------------------------------------------------------------
+
+    private void showCharacterCreator() {
+
+        final SurfaceView surface =
+                new SurfaceView(this);
+
+        final LinearLayout container =
+                new LinearLayout(this);
+
+        container.setOrientation(
+                LinearLayout.VERTICAL
+        );
+
+        container.setBackgroundColor(bg());
+
+        TextView header =
+                title(
+                        "PERSONAJE · RENDER M2/SKIN",
+                        17
+                );
+
+        container.addView(
+                header,
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dp(48)
+                )
+        );
+
+        container.addView(
+                surface,
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        0,
+                        1
+                )
+        );
+
+        Button back =
+                button("VOLVER");
+
+        back.setOnClickListener(v -> {
+
+            nativeRendererStop();
+
+            showCharacterSelection();
+        });
+
+        container.addView(
+                back,
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dp(54)
+                )
+        );
+
+        setScreen(container);
+
+        surface.getHolder().addCallback(
+                new SurfaceHolder.Callback() {
+
+                    @Override
+                    public void surfaceCreated(
+                            SurfaceHolder holder
+                    ) {
+
+                        nativeRendererSetBackend(1);
+
+                        nativeRendererSetSurface(
+                                holder.getSurface()
+                        );
+
+                        loadCharacterAsync();
+                    }
+
+                    @Override
+                    public void surfaceChanged(
+                            SurfaceHolder holder,
+                            int format,
+                            int width,
+                            int height
+                    ) {
+
+                        nativeRendererResize(
+                                width,
+                                height
+                        );
+                    }
+
+                    @Override
+                    public void surfaceDestroyed(
+                            SurfaceHolder holder
+                    ) {
+
+                        nativeRendererStop();
+                    }
+                }
+        );
+
+        surface.setOnTouchListener(
+                (v, event) -> {
+
+                    if (event.getAction() ==
+                            MotionEvent.ACTION_MOVE) {
+
+                        nativeRendererCamera(
+                                event.getX(),
+                                event.getY()
+                        );
+
+                    }
+
+                    if (event.getAction() ==
+                            MotionEvent.ACTION_DOWN) {
+
+                        return true;
+                    }
+
+                    return true;
+                }
+        );
+    }
+
+    private void loadCharacterAsync() {
 
         new Thread(() -> {
 
-            String result;
-
             try {
 
-                result =
-                        nativeInspectRoot();
+                DocumentFile model =
+                        findFirstFile(
+                                wowRoot,
+                                ".m2",
+                                5,
+                                150
+                        );
+
+                if (model == null) {
+
+                    runOnUiThread(() ->
+                            Toast.makeText(
+                                    this,
+                                    "No se encontró ningún M2.",
+                                    Toast.LENGTH_LONG
+                            ).show()
+                    );
+
+                    return;
+                }
+
+                byte[] m2 =
+                        readFile(model, 32 * 1024 * 1024);
+
+                DocumentFile skin =
+                        findSkin(
+                                wowRoot,
+                                model
+                        );
+
+                byte[] skinData =
+                        skin != null
+                                ? readFile(
+                                        skin,
+                                        8 * 1024 * 1024
+                                )
+                                : new byte[0];
+
+                boolean ok =
+                        nativeRendererLoadCharacter(
+                                m2,
+                                skinData
+                        );
+
+                runOnUiThread(() -> {
+
+                    Toast.makeText(
+                            this,
+                            ok
+                                    ? "Modelo M2 cargado."
+                                    : "No se pudo cargar el modelo.",
+                            Toast.LENGTH_SHORT
+                    ).show();
+
+                });
 
             } catch (Exception e) {
 
-                result =
-                        "ERROR:\n" +
-                        e.getMessage();
+                runOnUiThread(() ->
+                        Toast.makeText(
+                                this,
+                                "Error leyendo M2: " +
+                                        e.getMessage(),
+                                Toast.LENGTH_LONG
+                        ).show()
+                );
             }
-
-            final String finalResult =
-                    result;
-
-            runOnUiThread(() -> {
-
-                contentText.setText(
-                        finalResult
-                );
-
-                continueButton.setVisibility(
-                        View.VISIBLE
-                );
-
-                statusText.setText(
-                        finalResult.startsWith(
-                                "CLIENTE DETECTADO"
-                        )
-                        ? "CLIENTE 3.3.5a DETECTADO"
-                        : "CARPETA SELECCIONADA"
-                );
-            });
 
         }).start();
     }
 
-    // =========================================================
-    // VFS
-    // =========================================================
-
-    public String vfsList(
-            String relativePath
-    ) {
-
-        if (wowRootUri == null) {
-            return "";
-        }
-
-        try {
-
-            DocumentFile current =
-                    DocumentFile.fromTreeUri(
-                            this,
-                            wowRootUri
-                    );
-
-            if (current == null) {
-                return "";
-            }
-
-            if (relativePath != null &&
-                    !relativePath.isEmpty()) {
-
-                String[] parts =
-                        relativePath.split("/");
-
-                for (String part : parts) {
-
-                    if (part == null ||
-                            part.isEmpty()) {
-                        continue;
-                    }
-
-                    DocumentFile next =
-                            null;
-
-                    for (DocumentFile child :
-                            current.listFiles()) {
-
-                        String name =
-                                child.getName();
-
-                        if (name != null &&
-                                name.equals(part)) {
-
-                            next = child;
-                            break;
-                        }
-                    }
-
-                    if (next == null ||
-                            !next.isDirectory()) {
-
-                        return "";
-                    }
-
-                    current = next;
-                }
-            }
-
-            StringBuilder result =
-                    new StringBuilder();
-
-            for (DocumentFile child :
-                    current.listFiles()) {
-
-                String name =
-                        child.getName();
-
-                if (name == null) {
-                    continue;
-                }
-
-                if (child.isDirectory()) {
-
-                    result
-                            .append("D|")
-                            .append(name)
-                            .append('\n');
-
-                } else {
-
-                    result
-                            .append("F|")
-                            .append(name)
-                            .append('\n');
-                }
-            }
-
-            return result.toString();
-
-        } catch (Exception e) {
-
-            return "";
-        }
-    }
-
-    // =========================================================
-    // LECTURA BINARIA
-    // =========================================================
-
-    public byte[] vfsReadFile(
-            String relativePath,
-            int maxBytes
-    ) {
-
-        if (wowRootUri == null) {
-            return null;
-        }
-
-        try {
-
-            DocumentFile file =
-                    findDocument(
-                            relativePath
-                    );
-
-            if (file == null ||
-                    !file.isFile() ||
-                    !file.canRead()) {
-
-                return null;
-            }
-
-            InputStream input =
-                    getContentResolver()
-                            .openInputStream(
-                                    file.getUri()
-                            );
-
-            if (input == null) {
-                return null;
-            }
-
-            ByteArrayOutputStream output =
-                    new ByteArrayOutputStream();
-
-            byte[] buffer =
-                    new byte[8192];
-
-            int total = 0;
-
-            int read;
-
-            while ((read =
-                    input.read(buffer)) != -1) {
-
-                if (total + read >
-                        maxBytes) {
-
-                    int allowed =
-                            maxBytes - total;
-
-                    if (allowed > 0) {
-
-                        output.write(
-                                buffer,
-                                0,
-                                allowed
-                        );
-                    }
-
-                    break;
-                }
-
-                output.write(
-                        buffer,
-                        0,
-                        read
-                );
-
-                total += read;
-            }
-
-            input.close();
-
-            return output.toByteArray();
-
-        } catch (Exception e) {
-
-            return null;
-        }
-    }
-
-    private DocumentFile findDocument(
-            String relativePath
-    ) {
-
-        if (wowRootUri == null) {
-            return null;
-        }
-
-        DocumentFile current =
-                DocumentFile.fromTreeUri(
-                        this,
-                        wowRootUri
-                );
-
-        if (current == null) {
-            return null;
-        }
-
-        String clean =
-                relativePath == null
-                ? ""
-                : relativePath
-                    .replace('\\', '/');
-
-        String[] parts =
-                clean.split("/");
-
-        for (String part : parts) {
-
-            if (part == null ||
-                    part.isEmpty()) {
-
-                continue;
-            }
-
-            DocumentFile next =
-                    null;
-
-            for (DocumentFile child :
-                    current.listFiles()) {
-
-                String name =
-                        child.getName();
-
-                if (name != null &&
-                        name.equals(part)) {
-
-                    next = child;
-                    break;
-                }
-            }
-
-            if (next == null) {
-                return null;
-            }
-
-            current = next;
-        }
-
-        return current;
-    }
-
-    // =========================================================
-    // LECTOR DE RECURSO
-    // =========================================================
-
-    public String readResource(
-            String relativePath
-    ) {
-
-        try {
-
-            byte[] data =
-                    vfsReadFile(
-                            relativePath,
-                            1024 * 1024
-                    );
-
-            if (data == null) {
-
-                return
-                        "ERROR\n\n" +
-                        "No se pudo abrir:\n" +
-                        relativePath;
-            }
-
-            return
-                    "RESOURCE\n\n" +
-                    "Ruta: " +
-                    relativePath +
-                    "\n" +
-                    "Bytes leídos: " +
-                    data.length;
-
-        } catch (Exception e) {
-
-            return
-                    "ERROR\n\n" +
-                    e.getMessage();
-        }
-    }
-
-    // =========================================================
-    // UTILIDADES
-    // =========================================================
-
-    private int dp(int value) {
-
-        float density =
-                getResources()
-                        .getDisplayMetrics()
-                        .density;
-
-        return (int)
-                (value * density + 0.5f);
-    }
-
-    @Override
-    public void onBackPressed() {
-
-        if (loginPanel != null &&
-                loginPanel.getVisibility() ==
-                        View.VISIBLE) {
-
-            loginPanel.setVisibility(
-                    View.GONE
-            );
-
-            selectFolderButton.setVisibility(
-                    View.VISIBLE
-            );
-
-            continueButton.setVisibility(
-                    View.VISIBLE
-            );
-
-            statusText.setText(
-                    "CLIENTE DETECTADO"
-            );
+    // ------------------------------------------------------------
+    // 6. ENTRAR AL MUNDO
+    // ------------------------------------------------------------
+
+    private void findAndEnterWorld() {
+
+        if (wowRoot == null) {
+
+            Toast.makeText(
+                    this,
+                    "Primero selecciona el cliente.",
+                    Toast.LENGTH_LONG
+            ).show();
 
             return;
         }
 
-        super.onBackPressed();
+        Toast.makeText(
+                this,
+                "Buscando terreno ADT...",
+                Toast.LENGTH_SHORT
+        ).show();
+
+        new Thread(() -> {
+
+            try {
+
+                /*
+                 * No hacemos un escaneo completo del cliente.
+                 *
+                 * Buscamos solamente un ADT hasta profundidad 6
+                 * y un máximo de 80 candidatos.
+                 */
+
+                DocumentFile adt =
+                        findFirstFile(
+                                wowRoot,
+                                ".adt",
+                                6,
+                                80
+                        );
+
+                if (adt == null) {
+
+                    runOnUiThread(() ->
+                            Toast.makeText(
+                                    this,
+                                    "No se encontró ningún archivo ADT.",
+                                    Toast.LENGTH_LONG
+                            ).show()
+                    );
+
+                    return;
+                }
+
+                byte[] data =
+                        readFile(
+                                adt,
+                                32 * 1024 * 1024
+                        );
+
+                boolean valid =
+                        data.length >= 8 &&
+                        containsChunk(
+                                data,
+                                "MCNK"
+                        );
+
+                if (!valid) {
+
+                    runOnUiThread(() ->
+                            Toast.makeText(
+                                    this,
+                                    "El ADT encontrado no contiene MCNK válido.",
+                                    Toast.LENGTH_LONG
+                            ).show()
+                    );
+
+                    return;
+                }
+
+                runOnUiThread(() ->
+                        showWorldScreen(
+                                adt.getName(),
+                                data
+                        )
+                );
+
+            } catch (Exception e) {
+
+                runOnUiThread(() ->
+                        Toast.makeText(
+                                this,
+                                "Error cargando mundo: " +
+                                        e.getMessage(),
+                                Toast.LENGTH_LONG
+                        ).show()
+                );
+            }
+
+        }).start();
+    }
+
+    // ------------------------------------------------------------
+    // 7. WORLD VIEW
+    // ------------------------------------------------------------
+
+    private void showWorldScreen(
+            String fileName,
+            byte[] adtData
+    ) {
+
+        final LinearLayout container =
+                new LinearLayout(this);
+
+        container.setOrientation(
+                LinearLayout.VERTICAL
+        );
+
+        container.setBackgroundColor(bg());
+
+        TextView header =
+                title(
+                        "WORLD · " +
+                                (fileName != null
+                                        ? fileName
+                                        : "ADT"),
+                        15
+                );
+
+        container.addView(
+                header,
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dp(42)
+                )
+        );
+
+        final SurfaceView surface =
+                new SurfaceView(this);
+
+        container.addView(
+                surface,
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        0,
+                        1
+                )
+        );
+
+        LinearLayout controls =
+                createWorldControls();
+
+        container.addView(
+                controls,
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dp(90)
+                )
+        );
+
+        Button exit =
+                button("SALIR DEL MUNDO");
+
+        exit.setOnClickListener(v -> {
+
+            nativeRendererStop();
+
+            showCharacterSelection();
+        });
+
+        container.addView(
+                exit,
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dp(48)
+                )
+        );
+
+        setScreen(container);
+
+        surface.getHolder().addCallback(
+                new SurfaceHolder.Callback() {
+
+                    @Override
+                    public void surfaceCreated(
+                            SurfaceHolder holder
+                    ) {
+
+                        nativeRendererSetBackend(1);
+
+                        nativeRendererSetSurface(
+                                holder.getSurface()
+                        );
+
+                        /*
+                         * Esperamos a que el renderer tenga
+                         * superficie y luego entregamos el ADT.
+                         */
+
+                        mainHandler.postDelayed(
+                                () -> {
+
+                                    nativeRendererLoadWorld(
+                                            adtData
+                                    );
+
+                                },
+                                150
+                        );
+                    }
+
+                    @Override
+                    public void surfaceChanged(
+                            SurfaceHolder holder,
+                            int format,
+                            int width,
+                            int height
+                    ) {
+
+                        nativeRendererResize(
+                                width,
+                                height
+                        );
+                    }
+
+                    @Override
+                    public void surfaceDestroyed(
+                            SurfaceHolder holder
+                    ) {
+
+                        nativeRendererStop();
+                    }
+                }
+        );
+
+        surface.setOnTouchListener(
+                (v, event) -> {
+
+                    if (event.getAction() ==
+                            MotionEvent.ACTION_MOVE) {
+
+                        nativeRendererCamera(
+                                event.getX(),
+                                event.getY()
+                        );
+
+                    }
+
+                    return true;
+                }
+        );
+    }
+
+    private LinearLayout createWorldControls() {
+
+        LinearLayout controls =
+                new LinearLayout(this);
+
+        controls.setOrientation(
+                LinearLayout.HORIZONTAL
+        );
+
+        controls.setGravity(
+                Gravity.CENTER
+        );
+
+        controls.setBackgroundColor(panel());
+
+        Button left =
+                button("◀");
+
+        Button zoomIn =
+                button("+");
+
+        Button zoomOut =
+                button("−");
+
+        Button right =
+                button("▶");
+
+        View.OnClickListener empty =
+                v -> {
+                };
+
+        left.setOnClickListener(
+                v -> nativeRendererCamera(-30, 0)
+        );
+
+        right.setOnClickListener(
+                v -> nativeRendererCamera(30, 0)
+        );
+
+        zoomIn.setOnClickListener(
+                v -> nativeRendererZoom(-1)
+        );
+
+        zoomOut.setOnClickListener(
+                v -> nativeRendererZoom(1)
+        );
+
+        controls.addView(left, controlParams());
+        controls.addView(zoomIn, controlParams());
+        controls.addView(zoomOut, controlParams());
+        controls.addView(right, controlParams());
+
+        return controls;
+    }
+
+    private LinearLayout.LayoutParams controlParams() {
+
+        LinearLayout.LayoutParams p =
+                new LinearLayout.LayoutParams(
+                        dp(70),
+                        dp(58)
+                );
+
+        p.setMargins(
+                dp(6),
+                dp(8),
+                dp(6),
+                dp(8)
+        );
+
+        return p;
+    }
+
+    // ------------------------------------------------------------
+    // FILE SEARCH
+    // ------------------------------------------------------------
+
+    private DocumentFile findFirstFile(
+            DocumentFile dir,
+            String extension,
+            int depth,
+            int maxCandidates
+    ) {
+
+        if (dir == null ||
+                !dir.isDirectory() ||
+                depth < 0) {
+
+            return null;
+        }
+
+        DocumentFile[] children =
+                dir.listFiles();
+
+        int inspected = 0;
+
+        for (DocumentFile f : children) {
+
+            if (inspected++ >= maxCandidates) {
+                return null;
+            }
+
+            if (f.isFile()) {
+
+                String name =
+                        f.getName();
+
+                if (name != null &&
+                        name.toLowerCase(
+                                Locale.ROOT
+                        ).endsWith(
+                                extension.toLowerCase(
+                                        Locale.ROOT
+                                )
+                        )) {
+
+                    return f;
+                }
+            }
+        }
+
+        for (DocumentFile f : children) {
+
+            if (f.isDirectory()) {
+
+                DocumentFile result =
+                        findFirstFile(
+                                f,
+                                extension,
+                                depth - 1,
+                                maxCandidates
+                        );
+
+                if (result != null) {
+                    return result;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private DocumentFile findSkin(
+            DocumentFile root,
+            DocumentFile model
+    ) {
+
+        String modelName =
+                model.getName();
+
+        if (modelName == null) {
+            return null;
+        }
+
+        if (modelName.toLowerCase(
+                Locale.ROOT
+        ).endsWith(".m2")) {
+
+            String base =
+                    modelName.substring(
+                            0,
+                            modelName.length() - 3
+                    );
+
+            String wanted =
+                    base + "skin";
+
+            return findNamedFile(
+                    root,
+                    wanted,
+                    6
+            );
+        }
+
+        return null;
+    }
+
+    private DocumentFile findNamedFile(
+            DocumentFile dir,
+            String wanted,
+            int depth
+    ) {
+
+        if (dir == null ||
+                !dir.isDirectory() ||
+                depth < 0) {
+
+            return null;
+        }
+
+        DocumentFile[] children =
+                dir.listFiles();
+
+        for (DocumentFile f : children) {
+
+            String name =
+                    f.getName();
+
+            if (f.isFile() &&
+                    name != null &&
+                    name.equalsIgnoreCase(wanted)) {
+
+                return f;
+            }
+        }
+
+        for (DocumentFile f : children) {
+
+            if (f.isDirectory()) {
+
+                DocumentFile result =
+                        findNamedFile(
+                                f,
+                                wanted,
+                                depth - 1
+                        );
+
+                if (result != null) {
+                    return result;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private byte[] readFile(
+            DocumentFile file,
+            int maxSize
+    ) throws Exception {
+
+        long length =
+                file.length();
+
+        if (length > maxSize) {
+            throw new Exception(
+                    "Archivo demasiado grande: " +
+                            length
+            );
+        }
+
+        InputStream input =
+                getContentResolver()
+                        .openInputStream(
+                                file.getUri()
+                        );
+
+        if (input == null) {
+            throw new Exception(
+                    "No se pudo abrir el archivo."
+            );
+        }
+
+        ByteArrayOutputStream out =
+                new ByteArrayOutputStream();
+
+        byte[] buffer =
+                new byte[64 * 1024];
+
+        int read;
+
+        while ((read =
+                input.read(buffer)) != -1) {
+
+            out.write(
+                    buffer,
+                    0,
+                    read
+            );
+
+            if (out.size() > maxSize) {
+
+                input.close();
+
+                throw new Exception(
+                        "Archivo supera el límite."
+                );
+            }
+        }
+
+        input.close();
+
+        return out.toByteArray();
+    }
+
+    private boolean containsChunk(
+            byte[] data,
+            String chunk
+    ) {
+
+        if (chunk.length() != 4) {
+            return false;
+        }
+
+        byte[] tag =
+                chunk.getBytes(
+                        java.nio.charset.StandardCharsets.US_ASCII
+                );
+
+        for (int i = 0;
+             i + 4 <= data.length;
+             i++) {
+
+            if (data[i] == tag[0] &&
+                    data[i + 1] == tag[1] &&
+                    data[i + 2] == tag[2] &&
+                    data[i + 3] == tag[3]) {
+
+                return true;
+            }
+        }
+
+        return false;
     }
 }
