@@ -177,14 +177,17 @@ jobs:
 
 
       # ============================================================
-      # 11. Instalar OpenSSL precompilado para Android
+      # 11. Instalar OpenSSL local (arm64-v8a v4.0.3)
       # ============================================================
 
-      - name: Install OpenSSL for Android
-        uses: violetitu/openssl-android-action@v1
-        with:
-          vcpkg_version: '2024.04.26'
-          targets: 'arm64-v8a'
+      - name: Unzip Local OpenSSL
+        shell: bash
+        run: |
+          # Reemplaza ./openssl.zip con la ruta interna correcta si no está en la raíz
+          unzip -q "./openssl.zip" -d ${{ github.workspace }}/openssl-android
+          
+          echo "Contenido extraído en openssl-android:"
+          ls -la ${{ github.workspace }}/openssl-android
 
 
       # ============================================================
@@ -200,7 +203,7 @@ jobs:
 
 
       # ============================================================
-      # 13. Compilar (Usando 'gradle' global e inyectando OpenSSL)
+      # 13. Compilar (Inyectando las rutas del OpenSSL 4.0.3 local)
       # ============================================================
 
       - name: Build Debug APK
@@ -211,10 +214,10 @@ jobs:
             --stacktrace \
             --info
         env:
-          OPENSSL_ROOT_DIR: ${{ github.workspace }}/openssl-android/arm64-v8a
-          OPENSSL_INCLUDE_DIR: ${{ github.workspace }}/openssl-android/arm64-v8a/include
-          OPENSSL_CRYPTO_LIBRARY: ${{ github.workspace }}/openssl-android/arm64-v8a/lib/libcrypto.a
-          OPENSSL_SSL_LIBRARY: ${{ github.workspace }}/openssl-android/arm64-v8a/lib/libssl.a
+          OPENSSL_ROOT_DIR: ${{ github.workspace }}/openssl-android
+          OPENSSL_INCLUDE_DIR: ${{ github.workspace }}/openssl-android/include
+          OPENSSL_CRYPTO_LIBRARY: ${{ github.workspace }}/openssl-android/lib/libcrypto.a
+          OPENSSL_SSL_LIBRARY: ${{ github.workspace }}/openssl-android/lib/libssl.a
 
 
       # ============================================================
