@@ -45,7 +45,7 @@ RendererBackend gActiveBackend =
         RendererBackend::OPENGL;
 
 // ================================================================
-// COMMON WINDOW
+// COMMON
 // ================================================================
 
 ANativeWindow* gWindow = nullptr;
@@ -56,6 +56,7 @@ int gHeight = 1;
 std::mutex gMutex;
 
 std::atomic<bool> gRunning(false);
+
 std::thread gRenderThread;
 
 // ================================================================
@@ -204,6 +205,49 @@ GLuint gGlIndexBuffer = 0;
 
 GLint gGlMvpLocation = -1;
 
+// ================================================================
+// OpenGL shader sources
+//
+// NO usamos GL_VERTEX_SHADER como nombre de variable porque
+// GLES3 define ese identificador como macro.
+// ================================================================
+
+const char* kGlVertexShaderSource = R"(
+#version 300 es
+
+layout(location = 0) in vec3 aPosition;
+layout(location = 1) in vec3 aColor;
+
+uniform mat4 uMVP;
+
+out vec3 vColor;
+
+void main()
+{
+    gl_Position = uMVP * vec4(aPosition, 1.0);
+    vColor = aColor;
+}
+)";
+
+const char* kGlFragmentShaderSource = R"(
+#version 300 es
+
+precision mediump float;
+
+in vec3 vColor;
+
+out vec4 fragColor;
+
+void main()
+{
+    fragColor = vec4(vColor, 1.0);
+}
+)";
+
+// ================================================================
+// Geometry
+// ================================================================
+
 struct Vertex
 {
     float x;
@@ -215,40 +259,46 @@ struct Vertex
     float b;
 };
 
-const Vertex CUBE_VERTICES[] =
+const Vertex kCubeVertices[] =
 {
+    // Front
     {-1.0f,-1.0f, 1.0f, 0.10f,0.45f,0.95f},
     { 1.0f,-1.0f, 1.0f, 0.10f,0.45f,0.95f},
     { 1.0f, 1.0f, 1.0f, 0.15f,0.65f,1.00f},
     {-1.0f, 1.0f, 1.0f, 0.15f,0.65f,1.00f},
 
+    // Back
     {-1.0f,-1.0f,-1.0f, 0.05f,0.20f,0.55f},
     { 1.0f,-1.0f,-1.0f, 0.05f,0.20f,0.55f},
     { 1.0f, 1.0f,-1.0f, 0.10f,0.35f,0.75f},
     {-1.0f, 1.0f,-1.0f, 0.10f,0.35f,0.75f},
 
+    // Top
     {-1.0f, 1.0f,-1.0f, 0.85f,0.60f,0.08f},
     { 1.0f, 1.0f,-1.0f, 0.95f,0.72f,0.12f},
     { 1.0f, 1.0f, 1.0f, 1.00f,0.82f,0.20f},
     {-1.0f, 1.0f, 1.0f, 0.95f,0.70f,0.10f},
 
+    // Bottom
     {-1.0f,-1.0f,-1.0f, 0.03f,0.08f,0.18f},
     { 1.0f,-1.0f,-1.0f, 0.04f,0.10f,0.22f},
     { 1.0f,-1.0f, 1.0f, 0.06f,0.14f,0.30f},
     {-1.0f,-1.0f, 1.0f, 0.05f,0.12f,0.26f},
 
+    // Right
     { 1.0f,-1.0f,-1.0f, 0.45f,0.18f,0.04f},
     { 1.0f, 1.0f,-1.0f, 0.65f,0.30f,0.05f},
     { 1.0f, 1.0f, 1.0f, 0.85f,0.45f,0.08f},
     { 1.0f,-1.0f, 1.0f, 0.65f,0.28f,0.04f},
 
+    // Left
     {-1.0f,-1.0f,-1.0f, 0.20f,0.08f,0.04f},
     {-1.0f,-1.0f, 1.0f, 0.35f,0.12f,0.03f},
     {-1.0f, 1.0f, 1.0f, 0.50f,0.18f,0.05f},
     {-1.0f, 1.0f,-1.0f, 0.30f,0.10f,0.04f}
 };
 
-const uint16_t CUBE_INDICES[] =
+const uint16_t kCubeIndices[] =
 {
      0, 1, 2,
      2, 3, 0,
@@ -269,37 +319,9 @@ const uint16_t CUBE_INDICES[] =
     22,20,23
 };
 
-const char* GL_VERTEX_SHADER = R"(
-#version 300 es
-
-layout(location = 0) in vec3 aPosition;
-layout(location = 1) in vec3 aColor;
-
-uniform mat4 uMVP;
-
-out vec3 vColor;
-
-void main()
-{
-    gl_Position = uMVP * vec4(aPosition, 1.0);
-    vColor = aColor;
-}
-)";
-
-const char* GL_FRAGMENT_SHADER = R"(
-#version 300 es
-
-precision mediump float;
-
-in vec3 vColor;
-
-out vec4 fragColor;
-
-void main()
-{
-    fragColor = vec4(vColor, 1.0);
-}
-)";
+// ================================================================
+// OpenGL shader compiler
+// ================================================================
 
 GLuint compileGLShader(
         GLenum type,
@@ -308,8 +330,11 @@ GLuint compileGLShader(
     GLuint shader =
             glCreateShader(type);
 
-    if (!shader)
+    if (shader == 0)
+    {
+        LOGE("glCreateShader fallo");
         return 0;
+    }
 
     glShaderSource(
             shader,
@@ -326,18 +351,23 @@ GLuint compileGLShader(
             GL_COMPILE_STATUS,
             &success);
 
-    if (!success)
+    if (success != GL_TRUE)
     {
-        char log[2048];
+        char log[4096];
+
+        std::memset(
+                log,
+                0,
+                sizeof(log));
 
         glGetShaderInfoLog(
                 shader,
-                sizeof(log),
+                sizeof(log) - 1,
                 nullptr,
                 log);
 
         LOGE(
-                "OpenGL shader error: %s",
+                "Error compilando shader: %s",
                 log);
 
         glDeleteShader(shader);
@@ -348,39 +378,52 @@ GLuint compileGLShader(
     return shader;
 }
 
+// ================================================================
+// OpenGL program
+// ================================================================
+
 bool createGLProgram()
 {
-    GLuint vs =
+    GLuint vertexShader =
             compileGLShader(
                     GL_VERTEX_SHADER,
-                    GL_VERTEX_SHADER);
+                    kGlVertexShaderSource);
 
-    if (!vs)
+    if (!vertexShader)
         return false;
 
-    GLuint fs =
+    GLuint fragmentShader =
             compileGLShader(
                     GL_FRAGMENT_SHADER,
-                    GL_FRAGMENT_SHADER);
+                    kGlFragmentShaderSource);
 
-    if (!fs)
+    if (!fragmentShader)
     {
-        glDeleteShader(vs);
+        glDeleteShader(vertexShader);
         return false;
     }
 
     gGlProgram =
             glCreateProgram();
 
-    glAttachShader(
-            gGlProgram,
-            vs);
+    if (!gGlProgram)
+    {
+        glDeleteShader(vertexShader);
+        glDeleteShader(fragmentShader);
+
+        return false;
+    }
 
     glAttachShader(
             gGlProgram,
-            fs);
+            vertexShader);
 
-    glLinkProgram(gGlProgram);
+    glAttachShader(
+            gGlProgram,
+            fragmentShader);
+
+    glLinkProgram(
+            gGlProgram);
 
     GLint success = GL_FALSE;
 
@@ -389,24 +432,30 @@ bool createGLProgram()
             GL_LINK_STATUS,
             &success);
 
-    glDeleteShader(vs);
-    glDeleteShader(fs);
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
 
-    if (!success)
+    if (success != GL_TRUE)
     {
-        char log[2048];
+        char log[4096];
+
+        std::memset(
+                log,
+                0,
+                sizeof(log));
 
         glGetProgramInfoLog(
                 gGlProgram,
-                sizeof(log),
+                sizeof(log) - 1,
                 nullptr,
                 log);
 
         LOGE(
-                "OpenGL program error: %s",
+                "Error enlazando programa: %s",
                 log);
 
-        glDeleteProgram(gGlProgram);
+        glDeleteProgram(
+                gGlProgram);
 
         gGlProgram = 0;
 
@@ -418,8 +467,20 @@ bool createGLProgram()
                     gGlProgram,
                     "uMVP");
 
+    if (gGlMvpLocation < 0)
+    {
+        LOGE(
+                "No se encontro uMVP");
+
+        return false;
+    }
+
     return true;
 }
+
+// ================================================================
+// OpenGL geometry
+// ================================================================
 
 bool createGLGeometry()
 {
@@ -433,8 +494,8 @@ bool createGLGeometry()
 
     glBufferData(
             GL_ARRAY_BUFFER,
-            sizeof(CUBE_VERTICES),
-            CUBE_VERTICES,
+            sizeof(kCubeVertices),
+            kCubeVertices,
             GL_STATIC_DRAW);
 
     glGenBuffers(
@@ -447,8 +508,8 @@ bool createGLGeometry()
 
     glBufferData(
             GL_ELEMENT_ARRAY_BUFFER,
-            sizeof(CUBE_INDICES),
-            CUBE_INDICES,
+            sizeof(kCubeIndices),
+            kCubeIndices,
             GL_STATIC_DRAW);
 
     glBindBuffer(
@@ -462,8 +523,18 @@ bool createGLGeometry()
     return true;
 }
 
+// ================================================================
+// OpenGL initialization
+// ================================================================
+
 bool initializeOpenGL()
 {
+    if (gEglDisplay == EGL_NO_DISPLAY)
+    {
+        LOGE("EGL display invalido");
+        return false;
+    }
+
     const EGLint configAttributes[] =
     {
         EGL_RENDERABLE_TYPE,
@@ -472,12 +543,20 @@ bool initializeOpenGL()
         EGL_SURFACE_TYPE,
         EGL_WINDOW_BIT,
 
-        EGL_RED_SIZE, 8,
-        EGL_GREEN_SIZE, 8,
-        EGL_BLUE_SIZE, 8,
-        EGL_ALPHA_SIZE, 8,
+        EGL_RED_SIZE,
+        8,
 
-        EGL_DEPTH_SIZE, 24,
+        EGL_GREEN_SIZE,
+        8,
+
+        EGL_BLUE_SIZE,
+        8,
+
+        EGL_ALPHA_SIZE,
+        8,
+
+        EGL_DEPTH_SIZE,
+        24,
 
         EGL_NONE
     };
@@ -493,13 +572,17 @@ bool initializeOpenGL()
                 1,
                 &configCount))
     {
-        LOGE("eglChooseConfig fallo");
+        LOGE(
+                "eglChooseConfig fallo");
+
         return false;
     }
 
     if (configCount == 0)
     {
-        LOGE("No existe configuracion EGL ES3");
+        LOGE(
+                "No existe configuracion EGL ES3");
+
         return false;
     }
 
@@ -507,6 +590,7 @@ bool initializeOpenGL()
     {
         EGL_CONTEXT_CLIENT_VERSION,
         3,
+
         EGL_NONE
     };
 
@@ -519,7 +603,9 @@ bool initializeOpenGL()
 
     if (gEglContext == EGL_NO_CONTEXT)
     {
-        LOGE("eglCreateContext fallo");
+        LOGE(
+                "eglCreateContext fallo");
+
         return false;
     }
 
@@ -532,7 +618,9 @@ bool initializeOpenGL()
 
     if (gEglSurface == EGL_NO_SURFACE)
     {
-        LOGE("eglCreateWindowSurface fallo");
+        LOGE(
+                "eglCreateWindowSurface fallo");
+
         return false;
     }
 
@@ -542,17 +630,23 @@ bool initializeOpenGL()
                 gEglSurface,
                 gEglContext))
     {
-        LOGE("eglMakeCurrent fallo");
+        LOGE(
+                "eglMakeCurrent fallo");
+
         return false;
     }
 
     LOGI(
-            "OpenGL: %s",
+            "OpenGL ES version: %s",
             glGetString(GL_VERSION));
 
     LOGI(
-            "GPU: %s",
+            "OpenGL renderer: %s",
             glGetString(GL_RENDERER));
+
+    LOGI(
+            "OpenGL vendor: %s",
+            glGetString(GL_VENDOR));
 
     glViewport(
             0,
@@ -573,6 +667,10 @@ bool initializeOpenGL()
     return true;
 }
 
+// ================================================================
+// OpenGL render
+// ================================================================
+
 void renderOpenGL(
         float timeSeconds)
 {
@@ -592,9 +690,10 @@ void renderOpenGL(
             GL_COLOR_BUFFER_BIT |
             GL_DEPTH_BUFFER_BIT);
 
-    glUseProgram(gGlProgram);
+    glUseProgram(
+            gGlProgram);
 
-    float aspect =
+    const float aspect =
             static_cast<float>(gWidth) /
             static_cast<float>(
                     std::max(gHeight, 1));
@@ -669,18 +768,31 @@ void renderOpenGL(
 
     glDrawElements(
             GL_TRIANGLES,
-            sizeof(CUBE_INDICES) /
-            sizeof(CUBE_INDICES[0]),
+            static_cast<GLsizei>(
+                    sizeof(kCubeIndices) /
+                    sizeof(kCubeIndices[0])),
             GL_UNSIGNED_SHORT,
             nullptr);
 
     glDisableVertexAttribArray(0);
     glDisableVertexAttribArray(1);
 
+    glBindBuffer(
+            GL_ARRAY_BUFFER,
+            0);
+
+    glBindBuffer(
+            GL_ELEMENT_ARRAY_BUFFER,
+            0);
+
     eglSwapBuffers(
             gEglDisplay,
             gEglSurface);
 }
+
+// ================================================================
+// OpenGL shutdown
+// ================================================================
 
 void shutdownOpenGL()
 {
@@ -695,7 +807,9 @@ void shutdownOpenGL()
 
     if (gGlProgram)
     {
-        glDeleteProgram(gGlProgram);
+        glDeleteProgram(
+                gGlProgram);
+
         gGlProgram = 0;
     }
 
@@ -733,12 +847,18 @@ void shutdownOpenGL()
 
     if (gEglDisplay != EGL_NO_DISPLAY)
     {
-        eglTerminate(gEglDisplay);
+        eglTerminate(
+                gEglDisplay);
     }
 
-    gEglDisplay = EGL_NO_DISPLAY;
-    gEglSurface = EGL_NO_SURFACE;
-    gEglContext = EGL_NO_CONTEXT;
+    gEglDisplay =
+            EGL_NO_DISPLAY;
+
+    gEglSurface =
+            EGL_NO_SURFACE;
+
+    gEglContext =
+            EGL_NO_CONTEXT;
 }
 
 // ================================================================
@@ -780,42 +900,53 @@ VkFence gVkFence =
 
 uint32_t gVkGraphicsQueueFamily = 0;
 
-std::vector<VkImage> gVkImages;
-
-std::vector<VkImageView> gVkImageViews;
-
-VkFormat gVkFormat =
-        VK_FORMAT_B8G8R8A8_UNORM;
-
-VkExtent2D gVkExtent{1, 1};
-
 bool gVulkanReady = false;
+
+// ================================================================
+// Vulkan extension names
+//
+// No usamos VK_KHR_ANDROID_SURFACE_EXTENSION_NAME porque el header
+// disponible en el NDK puede no exponer ese macro.
+// ================================================================
+
+constexpr const char*
+kVkAndroidSurfaceExtension =
+        "VK_KHR_android_surface";
+
+// ================================================================
+// Vulkan availability
+// ================================================================
 
 bool checkVulkanSupport()
 {
     uint32_t count = 0;
 
-    if (vkEnumerateInstanceExtensionProperties(
-                nullptr,
-                &count,
-                nullptr) != VK_SUCCESS)
-    {
+    VkResult result =
+            vkEnumerateInstanceExtensionProperties(
+                    nullptr,
+                    &count,
+                    nullptr);
+
+    if (result != VK_SUCCESS)
         return false;
-    }
+
+    if (count == 0)
+        return false;
 
     std::vector<VkExtensionProperties>
             extensions(count);
 
-    if (vkEnumerateInstanceExtensionProperties(
-                nullptr,
-                &count,
-                extensions.data()) != VK_SUCCESS)
-    {
-        return false;
-    }
+    result =
+            vkEnumerateInstanceExtensionProperties(
+                    nullptr,
+                    &count,
+                    extensions.data());
 
-    bool surfaceKHR = false;
-    bool androidSurface = false;
+    if (result != VK_SUCCESS)
+        return false;
+
+    bool surfaceAvailable = false;
+    bool androidSurfaceAvailable = false;
 
     for (const auto& extension : extensions)
     {
@@ -823,34 +954,39 @@ bool checkVulkanSupport()
                     extension.extensionName,
                     VK_KHR_SURFACE_EXTENSION_NAME) == 0)
         {
-            surfaceKHR = true;
+            surfaceAvailable = true;
         }
 
         if (std::strcmp(
                     extension.extensionName,
-                    VK_KHR_ANDROID_SURFACE_EXTENSION_NAME) == 0)
+                    kVkAndroidSurfaceExtension) == 0)
         {
-            androidSurface = true;
+            androidSurfaceAvailable = true;
         }
     }
 
-    return surfaceKHR && androidSurface;
+    return surfaceAvailable &&
+           androidSurfaceAvailable;
 }
+
+// ================================================================
+// Vulkan initialization
+// ================================================================
 
 bool initializeVulkan()
 {
     if (!checkVulkanSupport())
     {
         LOGI(
-                "Vulkan no disponible en este dispositivo");
+                "Vulkan no disponible");
 
         return false;
     }
 
-    const char* instanceExtensions[] =
+    const char* extensions[] =
     {
         VK_KHR_SURFACE_EXTENSION_NAME,
-        VK_KHR_ANDROID_SURFACE_EXTENSION_NAME
+        kVkAndroidSurfaceExtension
     };
 
     VkApplicationInfo appInfo{};
@@ -885,7 +1021,7 @@ bool initializeVulkan()
             2;
 
     instanceInfo.ppEnabledExtensionNames =
-            instanceExtensions;
+            extensions;
 
     VkResult result =
             vkCreateInstance(
@@ -904,15 +1040,17 @@ bool initializeVulkan()
 
     uint32_t deviceCount = 0;
 
-    vkEnumeratePhysicalDevices(
-            gVkInstance,
-            &deviceCount,
-            nullptr);
+    result =
+            vkEnumeratePhysicalDevices(
+                    gVkInstance,
+                    &deviceCount,
+                    nullptr);
 
-    if (deviceCount == 0)
+    if (result != VK_SUCCESS ||
+        deviceCount == 0)
     {
         LOGE(
-                "Vulkan no encontro GPU");
+                "No se encontro GPU Vulkan");
 
         return false;
     }
@@ -946,6 +1084,9 @@ bool initializeVulkan()
             &queueFamilyCount,
             nullptr);
 
+    if (queueFamilyCount == 0)
+        return false;
+
     std::vector<VkQueueFamilyProperties>
             queueFamilies(queueFamilyCount);
 
@@ -954,25 +1095,27 @@ bool initializeVulkan()
             &queueFamilyCount,
             queueFamilies.data());
 
-    bool foundQueue = false;
+    bool graphicsQueueFound = false;
 
     for (uint32_t i = 0;
          i < queueFamilyCount;
          ++i)
     {
-        if (queueFamilies[i].queueFlags &
-            VK_QUEUE_GRAPHICS_BIT)
+        if ((queueFamilies[i].queueFlags &
+             VK_QUEUE_GRAPHICS_BIT) != 0)
         {
             gVkGraphicsQueueFamily = i;
-            foundQueue = true;
+
+            graphicsQueueFound = true;
+
             break;
         }
     }
 
-    if (!foundQueue)
+    if (!graphicsQueueFound)
     {
         LOGE(
-                "Vulkan no encontro graphics queue");
+                "No existe graphics queue Vulkan");
 
         return false;
     }
@@ -1024,40 +1167,24 @@ bool initializeVulkan()
             0,
             &gVkGraphicsQueue);
 
-    LOGI(
-            "Vulkan dispositivo inicializado");
-
-    /*
-     * El swapchain se crea cuando tenemos el Surface
-     * Android correspondiente.
-     *
-     * En este primer backend dejamos preparada toda
-     * la cadena Vulkan sin introducir SPIR-V embebido
-     * artificialmente.
-     *
-     * El siguiente paso del renderer será:
-     *
-     *   Surface
-     *   -> Swapchain
-     *   -> RenderPass
-     *   -> Pipeline
-     *   -> M2/SKIN
-     *   -> BLP
-     *
-     * Así evitamos mezclar un shader de prueba con
-     * nuestro pipeline definitivo de WoW.
-     */
-
     gVulkanReady = true;
+
+    LOGI(
+            "Vulkan inicializado correctamente");
 
     return true;
 }
+
+// ================================================================
+// Vulkan shutdown
+// ================================================================
 
 void shutdownVulkan()
 {
     if (gVkDevice != VK_NULL_HANDLE)
     {
-        vkDeviceWaitIdle(gVkDevice);
+        vkDeviceWaitIdle(
+                gVkDevice);
 
         if (gVkFence != VK_NULL_HANDLE)
         {
@@ -1065,6 +1192,9 @@ void shutdownVulkan()
                     gVkDevice,
                     gVkFence,
                     nullptr);
+
+            gVkFence =
+                    VK_NULL_HANDLE;
         }
 
         if (gVkImageAvailable != VK_NULL_HANDLE)
@@ -1073,6 +1203,9 @@ void shutdownVulkan()
                     gVkDevice,
                     gVkImageAvailable,
                     nullptr);
+
+            gVkImageAvailable =
+                    VK_NULL_HANDLE;
         }
 
         if (gVkRenderFinished != VK_NULL_HANDLE)
@@ -1081,6 +1214,9 @@ void shutdownVulkan()
                     gVkDevice,
                     gVkRenderFinished,
                     nullptr);
+
+            gVkRenderFinished =
+                    VK_NULL_HANDLE;
         }
 
         if (gVkCommandPool != VK_NULL_HANDLE)
@@ -1089,11 +1225,28 @@ void shutdownVulkan()
                     gVkDevice,
                     gVkCommandPool,
                     nullptr);
+
+            gVkCommandPool =
+                    VK_NULL_HANDLE;
+        }
+
+        if (gVkSurface != VK_NULL_HANDLE)
+        {
+            vkDestroySurfaceKHR(
+                    gVkInstance,
+                    gVkSurface,
+                    nullptr);
+
+            gVkSurface =
+                    VK_NULL_HANDLE;
         }
 
         vkDestroyDevice(
                 gVkDevice,
                 nullptr);
+
+        gVkDevice =
+                VK_NULL_HANDLE;
     }
 
     if (gVkInstance != VK_NULL_HANDLE)
@@ -1101,30 +1254,35 @@ void shutdownVulkan()
         vkDestroyInstance(
                 gVkInstance,
                 nullptr);
-    }
 
-    gVkDevice =
-            VK_NULL_HANDLE;
+        gVkInstance =
+                VK_NULL_HANDLE;
+    }
 
     gVkPhysicalDevice =
             VK_NULL_HANDLE;
 
-    gVkInstance =
+    gVkGraphicsQueue =
             VK_NULL_HANDLE;
 
     gVulkanReady = false;
 }
 
 // ================================================================
-// BACKEND SELECTION
+// Backend initialization
 // ================================================================
 
 bool initializeRendererBackend()
 {
+    // ------------------------------------------------------------
+    // AUTO:
+    // intentar Vulkan primero.
+    // ------------------------------------------------------------
+
     if (gRequestedBackend ==
-        RendererBackend::VULKAN ||
+            RendererBackend::AUTO ||
         gRequestedBackend ==
-        RendererBackend::AUTO)
+            RendererBackend::VULKAN)
     {
         if (initializeVulkan())
         {
@@ -1132,29 +1290,24 @@ bool initializeRendererBackend()
                     RendererBackend::VULKAN;
 
             LOGI(
-                    "Backend activo: VULKAN");
+                    "Backend activo: Vulkan");
 
             return true;
         }
 
         if (gRequestedBackend ==
-            RendererBackend::VULKAN)
+                RendererBackend::VULKAN)
         {
             LOGE(
-                    "Se solicito Vulkan pero no pudo inicializarse");
+                    "Vulkan solicitado pero no pudo inicializarse");
 
             return false;
         }
     }
 
-    gActiveBackend =
-            RendererBackend::OPENGL;
-
-    if (!eglGetDisplay)
-    {
-        LOGE("EGL no disponible");
-        return false;
-    }
+    // ------------------------------------------------------------
+    // OpenGL ES fallback / modo forzado
+    // ------------------------------------------------------------
 
     gEglDisplay =
             eglGetDisplay(
@@ -1162,7 +1315,9 @@ bool initializeRendererBackend()
 
     if (gEglDisplay == EGL_NO_DISPLAY)
     {
-        LOGE("No se pudo obtener EGL display");
+        LOGE(
+                "No se pudo obtener EGL display");
+
         return false;
     }
 
@@ -1174,12 +1329,14 @@ bool initializeRendererBackend()
                 &major,
                 &minor))
     {
-        LOGE("eglInitialize fallo");
+        LOGE(
+                "eglInitialize fallo");
+
         return false;
     }
 
     LOGI(
-            "EGL %d.%d",
+            "EGL version %d.%d",
             major,
             minor);
 
@@ -1190,42 +1347,43 @@ bool initializeRendererBackend()
         return false;
     }
 
+    gActiveBackend =
+            RendererBackend::OPENGL;
+
     LOGI(
-            "Backend activo: OPENGL ES 3");
+            "Backend activo: OpenGL ES 3");
 
     return true;
 }
 
 // ================================================================
-// RENDER LOOP
+// Render loop
 // ================================================================
 
 void renderLoop()
 {
-    LOGI("Render thread iniciado");
+    LOGI(
+            "Render thread iniciado");
 
-    bool initialized =
-            initializeRendererBackend();
-
-    if (!initialized)
+    if (!initializeRendererBackend())
     {
         LOGE(
-                "No se pudo inicializar ningun backend");
+                "No se pudo inicializar el renderer");
 
         gRunning = false;
 
         return;
     }
 
-    auto start =
+    const auto start =
             std::chrono::steady_clock::now();
 
     while (gRunning)
     {
-        auto now =
+        const auto now =
                 std::chrono::steady_clock::now();
 
-        float timeSeconds =
+        const float timeSeconds =
                 std::chrono::duration<float>(
                         now - start).count();
 
@@ -1234,7 +1392,7 @@ void renderLoop()
                     gMutex);
 
             if (gActiveBackend ==
-                RendererBackend::OPENGL)
+                    RendererBackend::OPENGL)
             {
                 renderOpenGL(
                         timeSeconds);
@@ -1242,28 +1400,21 @@ void renderLoop()
             else
             {
                 /*
-                 * Vulkan ya esta inicializado y
-                 * validado como backend.
+                 * Vulkan ya esta inicializado.
                  *
-                 * El pipeline grafico Vulkan
-                 * definitivo se conectara aqui
-                 * junto con M2/SKIN/BLP.
+                 * El swapchain/render pass/pipeline
+                 * definitivo se agregara cuando
+                 * conectemos M2/SKIN/BLP.
                  */
-                std::this_thread::sleep_for(
-                        std::chrono::milliseconds(16));
             }
         }
 
-        if (gActiveBackend ==
-            RendererBackend::OPENGL)
-        {
-            std::this_thread::sleep_for(
-                    std::chrono::milliseconds(1));
-        }
+        std::this_thread::sleep_for(
+                std::chrono::milliseconds(16));
     }
 
     if (gActiveBackend ==
-        RendererBackend::OPENGL)
+            RendererBackend::OPENGL)
     {
         shutdownOpenGL();
     }
@@ -1272,12 +1423,9 @@ void renderLoop()
         shutdownVulkan();
     }
 
-    LOGI("Render thread detenido");
+    LOGI(
+            "Render thread detenido");
 }
-
-// ================================================================
-// CONTROL
-// ================================================================
 
 void stopRenderer()
 {
@@ -1289,7 +1437,7 @@ void stopRenderer()
     }
 }
 
-}
+} // namespace
 
 // ================================================================
 // JNI
@@ -1334,7 +1482,9 @@ Java_com_wowmobile_client_MainActivity_nativeRendererSetSurface(
 
     if (!surface)
     {
-        LOGE("Surface nulo");
+        LOGE(
+                "Surface nulo");
+
         return;
     }
 
@@ -1381,14 +1531,15 @@ Java_com_wowmobile_client_MainActivity_nativeRendererSetSurface(
     }
 
     LOGI(
-            "Surface: %dx%d",
+            "Surface recibida: %dx%d",
             gWidth,
             gHeight);
 
     gRunning = true;
 
     gRenderThread =
-            std::thread(renderLoop);
+            std::thread(
+                    renderLoop);
 }
 
 extern "C"
@@ -1403,13 +1554,17 @@ Java_com_wowmobile_client_MainActivity_nativeRendererResize(
             gMutex);
 
     gWidth =
-            width > 0 ? width : 1;
+            width > 0 ?
+            width :
+            1;
 
     gHeight =
-            height > 0 ? height : 1;
+            height > 0 ?
+            height :
+            1;
 
     if (gActiveBackend ==
-        RendererBackend::OPENGL &&
+            RendererBackend::OPENGL &&
         gEglDisplay != EGL_NO_DISPLAY)
     {
         glViewport(
@@ -1452,11 +1607,10 @@ Java_com_wowmobile_client_MainActivity_nativeRendererCamera(
             gMutex);
 
     gCameraYaw = yaw;
-    gCameraPitch = pitch;
 
     gCameraPitch =
             std::clamp(
-                    gCameraPitch,
+                    pitch,
                     -1.35f,
                     1.35f);
 }
