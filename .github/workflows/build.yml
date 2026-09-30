@@ -136,14 +136,24 @@ jobs:
         run: gradle clean --no-daemon --stacktrace
 
       # ============================================================
-      # 14. Purgar Entry redundante, Inyectar Argumentos de Compilación y Compilar
+      # 14. Corregir Mismatch de Namespaces y Compilar APK Principal
       # ============================================================
       - name: Build Debug APK
         shell: bash
         run: |
           rm -f app/src/main/wow_mobile_android_entry.cpp
 
-          # Inyección de argumentos nativos (OpenSSL estático + Ruta de GLM Absoluta del paso 11)
+          # PARCHE DE CORRECCIÓN DE NAMESPACE EN CALIENTE:
+          # Para evitar que Clang falle buscando 'WoWee', forzamos un alias global
+          # al principio de tus archivos locales para mapear las llamadas nativas correctamente
+          if [ -f app/src/main/wow_engine.cpp ]; then
+             sed -i '1s|^|#define WoWee wowee\nnamespace wowee {}\n|' app/src/main/wow_engine.cpp
+          fi
+          if [ -f app/src/main/wow_integration.cpp ]; then
+             sed -i '1s|^|#define WoWee wowee\nnamespace wowee {}\n|' app/src/main/wow_integration.cpp
+          fi
+
+          # Inyección de argumentos nativos (OpenSSL estático + Ruta de GLM Absoluta)
           NEW_CMAKE_ARGS="arguments '-DANDROID_STL=c++_shared', '-DOPENSSL_ROOT_DIR=${{ github.workspace }}/openssl-android/openssl', '-DOPENSSL_INCLUDE_DIR=${{ github.workspace }}/openssl-android/openssl/include', '-DOPENSSL_CRYPTO_LIBRARY=${{ github.workspace }}/openssl-android/openssl/lib/libcrypto.a', '-DOPENSSL_SSL_LIBRARY=${{ github.workspace }}/openssl-android/openssl/lib/libssl.a', '-DOPENSSL_USE_STATIC_LIBS=TRUE', '-DGLM_INCLUDE_DIR=${{ github.workspace }}/glm-src'"
           sed -i "s|arguments \"-DANDROID_STL=c++_shared\"|$NEW_CMAKE_ARGS|g" app/build.gradle
 
