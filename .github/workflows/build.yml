@@ -19,9 +19,11 @@ jobs:
       ABI: "arm64-v8a"
 
     steps:
+
       # ============================================================
-      # 1. CHECKOUT PRINCIPAL
+      # 1. CHECKOUT DEL PROYECTO
       # ============================================================
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -29,8 +31,9 @@ jobs:
           fetch-depth: 0
 
       # ============================================================
-      # 2. JAVA
+      # 2. JAVA 17
       # ============================================================
+
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
@@ -38,31 +41,125 @@ jobs:
           java-version: "17"
 
       # ============================================================
-      # 3. ANDROID SDK / NDK / CMAKE
+      # 3. ANDROID SDK
       # ============================================================
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+
+      - name: Configure Android SDK
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "ANDROID SDK"
+          echo "=============================================="
+
+          echo "ANDROID_HOME=${ANDROID_HOME}"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT}"
+
+          if [ -z "${ANDROID_HOME}" ]; then
+            export ANDROID_HOME="/usr/local/lib/android/sdk"
+          fi
+
+          if [ -z "${ANDROID_SDK_ROOT}" ]; then
+            export ANDROID_SDK_ROOT="${ANDROID_HOME}"
+          fi
+
+          echo "ANDROID_HOME=${ANDROID_HOME}" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
+
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="${ANDROID_HOME}/cmdline-tools/16.0/bin/sdkmanager"
+          fi
+
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "${ANDROID_HOME}/cmdline-tools" \
+              -type f \
+              -name sdkmanager \
+              | sort \
+              | tail -1)"
+          fi
+
+          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
+            echo "ERROR: No se encontró sdkmanager."
+            find "${ANDROID_HOME}/cmdline-tools" \
+              -maxdepth 3 \
+              -type f \
+              -name sdkmanager \
+              -print || true
+            exit 1
+          fi
+
+          SDKMANAGER_DIR="$(dirname "$SDKMANAGER")"
+
+          echo "SDKMANAGER=${SDKMANAGER}" >> "$GITHUB_ENV"
+          echo "${SDKMANAGER_DIR}" >> "$GITHUB_PATH"
+
+          echo
+          echo "sdkmanager seleccionado:"
+          echo "$SDKMANAGER"
+
+          echo
+          echo "Versión:"
+          "$SDKMANAGER" --version
+
+      # ============================================================
+      # 4. LICENCIAS E INSTALACIÓN DE SDK
+      # ============================================================
 
       - name: Install Android SDK components
+        shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
+          set -e
 
-          sdkmanager \
+          echo "=============================================="
+          echo "INSTALANDO ANDROID SDK"
+          echo "=============================================="
+
+          echo "SDKMANAGER=${SDKMANAGER}"
+
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+
+          "$SDKMANAGER" \
             "platform-tools" \
             "${ANDROID_PLATFORM}" \
             "build-tools;${ANDROID_BUILD_TOOLS}" \
             "cmake;${ANDROID_CMAKE_VERSION}" \
             "ndk;${ANDROID_NDK_VERSION}"
 
+          echo
+          echo "=============================================="
+          echo "SDK INSTALADO"
+          echo "=============================================="
+
+          echo
+          echo "Plataformas:"
+          ls -la "${ANDROID_HOME}/platforms" || true
+
+          echo
+          echo "Build Tools:"
+          ls -la "${ANDROID_HOME}/build-tools" || true
+
+          echo
+          echo "NDK:"
+          ls -la "${ANDROID_HOME}/ndk" || true
+
+          echo
+          echo "CMake:"
+          ls -la "${ANDROID_HOME}/cmake" || true
+
       # ============================================================
-      # 4. GRADLE
+      # 5. GRADLE
       # ============================================================
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
       # ============================================================
-      # 5. VERIFICAR ESTRUCTURA
+      # 6. COMPROBAR ESTRUCTURA
       # ============================================================
+
       - name: Check repository structure
         shell: bash
         run: |
@@ -70,11 +167,10 @@ jobs:
           echo "ESTRUCTURA DEL PROYECTO"
           echo "=============================================="
 
-          echo "Directorio actual:"
           pwd
 
           echo
-          echo "Contenido:"
+          echo "Archivos principales:"
           find . -maxdepth 2 -type f | sort | head -300
 
           echo
@@ -82,16 +178,17 @@ jobs:
           echo "WOWEE"
           echo "=============================================="
 
-          if [ -d "wowee" ]; then
-            echo "WoWee encontrado."
-          else
-            echo "ERROR: No existe el directorio wowee."
+          if [ ! -d "wowee" ]; then
+            echo "ERROR: No existe wowee/"
             exit 1
           fi
 
+          echo "WoWee encontrado correctamente."
+
       # ============================================================
-      # 6. VERIFICAR WOWEE
+      # 7. INSPECCIONAR WOWEE
       # ============================================================
+
       - name: Inspect WoWee source
         shell: bash
         run: |
@@ -106,7 +203,9 @@ jobs:
 
           echo
           echo "Buscando AuthHandler:"
-          grep -Rni "class AuthHandler\|struct AuthHandler\|AuthHandler" wowee \
+          grep -Rni \
+            "class AuthHandler\|struct AuthHandler\|AuthHandler" \
+            wowee \
             --include="*.hpp" \
             --include="*.h" \
             --include="*.cpp" \
@@ -114,8 +213,9 @@ jobs:
             | head -100 || true
 
       # ============================================================
-      # 7. SDL3
+      # 8. SDL3
       # ============================================================
+
       - name: Checkout SDL3
         uses: actions/checkout@v4
         with:
@@ -124,8 +224,9 @@ jobs:
           fetch-depth: 1
 
       # ============================================================
-      # 8. GLM
+      # 9. GLM
       # ============================================================
+
       - name: Checkout GLM
         uses: actions/checkout@v4
         with:
@@ -134,26 +235,31 @@ jobs:
           fetch-depth: 1
 
       # ============================================================
-      # 9. OPENSSL LOCAL
+      # 10. OPENSSL
       # ============================================================
+
       - name: Prepare OpenSSL
         shell: bash
         run: |
+          set -e
+
           echo "=============================================="
-          echo "PREPARANDO OPENSSL"
+          echo "OPENSSL"
           echo "=============================================="
 
           if [ ! -f "./openssl.zip" ]; then
-            echo "ADVERTENCIA: ./openssl.zip no existe."
-            echo "Se continuará sin extracción local de OpenSSL."
+            echo "ADVERTENCIA: openssl.zip no existe."
           else
             rm -rf "${GITHUB_WORKSPACE}/openssl-android"
+
             mkdir -p "${GITHUB_WORKSPACE}/openssl-android"
 
-            unzip -q "./openssl.zip" \
+            unzip -q \
+              "./openssl.zip" \
               -d "${GITHUB_WORKSPACE}/openssl-android"
 
-            echo "OpenSSL extraído correctamente."
+            echo "OpenSSL extraído."
+
             find "${GITHUB_WORKSPACE}/openssl-android" \
               -maxdepth 4 \
               -type f \
@@ -161,16 +267,18 @@ jobs:
           fi
 
       # ============================================================
-      # 10. NORMALIZAR INCLUDES SDL
+      # 11. NORMALIZAR SDL
       # ============================================================
+
       - name: Normalize WoWee SDL includes
         shell: bash
         run: |
           echo "=============================================="
-          echo "NORMALIZANDO INCLUDES SDL"
+          echo "NORMALIZANDO SDL"
           echo "=============================================="
 
           if [ -d "wowee" ]; then
+
             grep -RIl \
               --include="*.h" \
               --include="*.hpp" \
@@ -180,31 +288,39 @@ jobs:
               'SDL2/' \
               wowee \
               | while read -r file; do
-                  sed -i 's#SDL2/#SDL3/#g' "$file"
-                done
+
+                echo "Corrigiendo: $file"
+
+                sed -i 's#SDL2/#SDL3/#g' "$file"
+
+              done
+
           fi
 
-          echo "Normalización terminada."
+          echo "Normalización SDL terminada."
 
       # ============================================================
-      # 11. INFORMACIÓN DEL TOOLCHAIN
+      # 12. INFORMACIÓN DEL TOOLCHAIN
       # ============================================================
+
       - name: Show Android toolchain
         shell: bash
         run: |
           echo "=============================================="
-          echo "ANDROID TOOLCHAIN"
+          echo "TOOLCHAIN"
           echo "=============================================="
 
           echo "ANDROID_HOME=${ANDROID_HOME}"
-          echo "ANDROID_NDK_HOME=${ANDROID_NDK_HOME}"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT}"
           echo "ANDROID_NDK_VERSION=${ANDROID_NDK_VERSION}"
           echo "ANDROID_CMAKE_VERSION=${ANDROID_CMAKE_VERSION}"
           echo "ABI=${ABI}"
 
           echo
           echo "NDK:"
-          ls -la "${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}" | head -30
+          ls -la \
+            "${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}" \
+            | head -30
 
           echo
           echo "CMake:"
@@ -217,8 +333,9 @@ jobs:
             --version
 
       # ============================================================
-      # 12. VERIFICAR wow_integration.cpp
+      # 13. VALIDAR wow_integration.cpp
       # ============================================================
+
       - name: Validate WoW integration source
         shell: bash
         run: |
@@ -227,23 +344,25 @@ jobs:
           FILE="app/src/main/wow_integration.cpp"
 
           echo "=============================================="
-          echo "VALIDANDO ${FILE}"
+          echo "VALIDANDO WOW INTEGRATION"
           echo "=============================================="
 
           if [ ! -f "$FILE" ]; then
-            echo "ERROR: No existe ${FILE}"
+            echo "ERROR: No existe:"
+            echo "$FILE"
             exit 1
           fi
 
           echo
-          echo "Contenido actual:"
+          echo "Contenido:"
           echo "----------------------------------------------"
+
           nl -ba "$FILE"
+
           echo "----------------------------------------------"
 
           echo
           echo "COMPROBANDO NAMESPACES CORRUPTOS"
-          echo "=============================================="
 
           if grep -q "wowee::core::wowee::core" "$FILE"; then
             echo "ERROR: Namespace wowee::core duplicado."
@@ -256,11 +375,15 @@ jobs:
           fi
 
           if grep -q "g_WoWwowee" "$FILE"; then
-            echo "ERROR: Identificador g_WoWwowee corrupto."
+            echo "ERROR: g_WoWwowee encontrado."
             exit 1
           fi
 
-          echo "OK: No hay namespaces corruptos."
+          echo "OK."
+
+          # --------------------------------------------------------
+          # AuthHandler
+          # --------------------------------------------------------
 
           echo
           echo "COMPROBANDO AUTHHANDLER"
@@ -275,28 +398,41 @@ jobs:
           echo "Declaraciones de AuthHandler encontradas: ${AUTH_DECL_COUNT}"
 
           if [ "$AUTH_DECL_COUNT" -gt 1 ]; then
-            echo "ERROR: Hay más de una instancia local de AuthHandler."
             echo
-            grep -n "wowee::auth::AuthHandler" "$FILE" || true
+            echo "ERROR: AuthHandler duplicado."
+            echo
+            grep -n \
+              "wowee::auth::AuthHandler" \
+              "$FILE" || true
             exit 1
           fi
 
           echo "OK: AuthHandler no está duplicado."
 
+          # --------------------------------------------------------
+          # Literal \n
+          # --------------------------------------------------------
+
           echo
-          echo "COMPROBANDO LITERAL \\\\n"
+          echo "COMPROBANDO LITERALES \\\\n"
           echo "=============================================="
 
           if grep -Fq '\n' "$FILE"; then
-            echo "ERROR: Se encontró un literal \n dentro del código."
+            echo "ERROR: Se encontró un literal \n."
+
             grep -nF '\n' "$FILE" || true
+
             exit 1
           fi
 
-          echo "OK: No hay literales \n."
+          echo "OK."
+
+          # --------------------------------------------------------
+          # Variables globales
+          # --------------------------------------------------------
 
           echo
-          echo "COMPROBANDO DECLARACIONES"
+          echo "COMPROBANDO VARIABLES GLOBALES"
           echo "=============================================="
 
           APP_COUNT=$(
@@ -330,8 +466,9 @@ jobs:
           echo "=============================================="
 
       # ============================================================
-      # 13. MOSTRAR CMAKE
+      # 14. MOSTRAR CMAKE
       # ============================================================
+
       - name: Inspect CMake configuration
         shell: bash
         run: |
@@ -341,22 +478,27 @@ jobs:
 
           if [ -f "app/src/main/CMakeLists.txt" ]; then
             echo
-            echo "app/src/main/CMakeLists.txt:"
+            echo "app/src/main/CMakeLists.txt"
+            echo "----------------------------------------------"
             cat app/src/main/CMakeLists.txt
           fi
 
           if [ -f "app/CMakeLists.txt" ]; then
             echo
-            echo "app/CMakeLists.txt:"
+            echo "app/CMakeLists.txt"
+            echo "----------------------------------------------"
             cat app/CMakeLists.txt
           fi
 
       # ============================================================
-      # 14. LIMPIAR BUILD ANTERIOR
+      # 15. LIMPIAR BUILD
       # ============================================================
+
       - name: Clean Android build
         shell: bash
         run: |
+          set -e
+
           echo "=============================================="
           echo "LIMPIANDO BUILD"
           echo "=============================================="
@@ -364,14 +506,19 @@ jobs:
           rm -rf app/.cxx
           rm -rf app/build
 
-          ./gradlew clean --no-daemon --stacktrace
+          ./gradlew clean \
+            --no-daemon \
+            --stacktrace
 
       # ============================================================
-      # 15. PREPARAR GRADLE / CMAKE
+      # 16. CONFIGURAR GRADLE
       # ============================================================
+
       - name: Configure native build arguments
         shell: bash
         run: |
+          set -e
+
           echo "=============================================="
           echo "CONFIGURANDO BUILD NATIVO"
           echo "=============================================="
@@ -381,43 +528,49 @@ jobs:
             exit 1
           fi
 
-          echo
-          echo "app/build.gradle antes de modificar:"
-          cat app/build.gradle
-
           python3 <<'PY'
           from pathlib import Path
 
           path = Path("app/build.gradle")
+
           text = path.read_text(encoding="utf-8")
 
-          cmake_args = """
-                arguments "-DANDROID_STL=c++_shared"
-                arguments "-DANDROID_PLATFORM=android-35"
-                arguments "-DANDROID_ABI=arm64-v8a"
-                arguments "-DWOWEE_ANDROID=ON"
-                arguments "-DWOWEE_USE_SDL3=ON"
-          """
+          arguments = [
+              '        arguments "-DANDROID_STL=c++_shared"',
+              '        arguments "-DANDROID_PLATFORM=android-35"',
+              '        arguments "-DANDROID_ABI=arm64-v8a"',
+              '        arguments "-DWOWEE_ANDROID=ON"',
+              '        arguments "-DWOWEE_USE_SDL3=ON"',
+          ]
 
-          if "WOWEE_ANDROID=ON" not in text:
+          block = "\n".join(arguments)
+
+          if "-DWOWEE_ANDROID=ON" not in text:
+
               marker = "externalNativeBuild {"
+
               if marker in text:
                   text = text.replace(
                       marker,
-                      marker + "\n" + cmake_args,
+                      marker + "\n" + block,
                       1
                   )
 
-          path.write_text(text, encoding="utf-8")
+          path.write_text(
+              text,
+              encoding="utf-8"
+          )
+
           PY
 
           echo
-          echo "app/build.gradle después de modificar:"
+          echo "app/build.gradle:"
           cat app/build.gradle
 
       # ============================================================
-      # 16. COMPILAR DEBUG APK
+      # 17. COMPILAR APK
       # ============================================================
+
       - name: Build Debug APK
         shell: bash
         run: |
@@ -428,19 +581,18 @@ jobs:
           echo "=============================================="
 
           echo
-          echo "NO se modificará wow_integration.cpp."
-          echo "El archivo será compilado exactamente como fue validado."
+          echo "wow_integration.cpp NO será modificado."
 
           echo
           echo "=============================================="
-          echo "INTEGRACION FINAL"
+          echo "FUENTE FINAL"
           echo "=============================================="
 
           nl -ba app/src/main/wow_integration.cpp
 
           echo
           echo "=============================================="
-          echo "GRADLE BUILD"
+          echo "GRADLE"
           echo "=============================================="
 
           ./gradlew \
@@ -450,13 +602,14 @@ jobs:
             --info
 
       # ============================================================
-      # 17. BUSCAR APK
+      # 18. LOCALIZAR APK
       # ============================================================
+
       - name: Locate APK
         shell: bash
         run: |
           echo "=============================================="
-          echo "APK GENERADO"
+          echo "APK"
           echo "=============================================="
 
           find app/build/outputs/apk \
@@ -481,8 +634,9 @@ jobs:
           fi
 
       # ============================================================
-      # 18. SUBIR APK
+      # 19. SUBIR APK
       # ============================================================
+
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -491,8 +645,9 @@ jobs:
           if-no-files-found: error
 
       # ============================================================
-      # 19. INFORMACION FINAL
+      # 20. RESUMEN
       # ============================================================
+
       - name: Build summary
         if: success()
         shell: bash
