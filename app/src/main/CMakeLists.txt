@@ -1,5 +1,34 @@
+cmake_minimum_required(VERSION 3.22.1)
+project("wowmobile" LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# ============================================================
+# 1. Inclusión de Directorios de Cabeceras
+# ============================================================
+include_directories(
+    ${CMAKE_CURRENT_SOURCE_DIR}                                 # Tu carpeta main
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../wowee/include          # WoWee includes
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../wowee/extern/imgui     # ImGui de WoWee
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../wowee/extern/vk-bootstrap/src
+)
+
+if(OPENSSL_INCLUDE_DIR)
+    include_directories(${OPENSSL_INCLUDE_DIR})
+endif()
+
+# ============================================================
+# 2. Compilar SDL3 Oficial
+# ============================================================
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../../sdl3" sdl3_build)
+include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../../../sdl3/include")
+
+# ============================================================
+# 3. Definición del Target (Tus 2 Fuentes + Módulos de WoWee)
+# ============================================================
 add_library(wowmobile SHARED
-    # TUS DOS ARCHIVOS DE FUENTE LOCALES EN MAIN
+    # COMPILACIÓN PARALELA DE TUS FUENTES LOCALES EN CARPETA MAIN
     wow_engine.cpp
     wow_integration.cpp
 
@@ -42,4 +71,20 @@ add_library(wowmobile SHARED
     ../../../wowee/extern/imgui/backends/imgui_impl_sdl3.cpp
     ../../../wowee/extern/imgui/backends/imgui_impl_vulkan.cpp
     ../../../wowee/extern/vk-bootstrap/src/VkBootstrap.cpp
+)
+
+# ============================================================
+# 4. Enlace de Librerías del Sistema
+# ============================================================
+find_library(log-lib log)
+find_library(vulkan-lib vulkan)
+find_library(android-lib android)
+
+target_link_libraries(wowmobile PRIVATE
+    SDL3-shared
+    ${vulkan-lib}
+    ${log-lib}
+    ${android-lib}
+    ${OPENSSL_CRYPTO_LIBRARY}
+    ${OPENSSL_SSL_LIBRARY}
 )
