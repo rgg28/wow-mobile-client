@@ -136,12 +136,28 @@ jobs:
         run: gradle clean --no-daemon --stacktrace
 
       # ============================================================
-      # 14. Inyectar Argumentos nativos de compilación y Compilar
+      # 14. Parchear de forma automática Namespaces/Firmas y Compilar
       # ============================================================
       - name: Build Debug APK
         shell: bash
         run: |
           rm -f app/src/main/wow_mobile_android_entry.cpp
+
+          # Parcheamos wow_engine.cpp para corregir WoWee:: por wowee:: en minúsculas
+          if [ -f app/src/main/wow_engine.cpp ]; then
+            sed -i 's/WoWee::/wowee::/g' app/src/main/wow_engine.cpp
+          fi
+
+          # Parcheamos wow_integration.cpp para mapear los namespaces correctos y restaurar StartAuthentication
+          if [ -f app/src/main/wow_integration.cpp ]; then
+            sed -i 's/WoWee::/wowee::/g' app/src/main/wow_integration.cpp
+            sed -i 's/Application/wowee::core::Application/g' app/src/main/wow_integration.cpp
+            sed -i 's/WorldSocket/wowee::network::WorldSocket/g' app/src/main/wow_integration.cpp
+            sed -i 's/std::make_unique<wowee::core::Application>();/std::make_unique<wowee::core::Application>();\\n    g_WoWApplication->run();/' app/src/main/wow_integration.cpp
+            
+            # Reemplazo de la firma de red inestable por el método StartAuthentication original
+            sed -i 's/auth.logon(c_user, c_pass);/wowee::auth::AuthHandler auth(g_WoWWorldSocket.get());\\n    auth.StartAuthentication(c_user, c_pass);/g' app/src/main/wow_integration.cpp
+          fi
 
           # Inyección de argumentos nativos (OpenSSL estático + Ruta de GLM Absoluta)
           NEW_CMAKE_ARGS="arguments '-DANDROID_STL=c++_shared', '-DOPENSSL_ROOT_DIR=${{ github.workspace }}/openssl-android/openssl', '-DOPENSSL_INCLUDE_DIR=${{ github.workspace }}/openssl-android/openssl/include', '-DOPENSSL_CRYPTO_LIBRARY=${{ github.workspace }}/openssl-android/openssl/lib/libcrypto.a', '-DOPENSSL_SSL_LIBRARY=${{ github.workspace }}/openssl-android/openssl/lib/libssl.a', '-DOPENSSL_USE_STATIC_LIBS=TRUE', '-DGLM_INCLUDE_DIR=${{ github.workspace }}/glm-src'"
