@@ -151,16 +151,12 @@ static std::string vfsList(const std::string& path) {
 extern "C" {
 
 JNIEXPORT void JNICALL
-Java_com_wowmobile_client_MainActivity_nativeInit(JNIEnv* env, jobject thiz) {
-    if (g_mainActivity != nullptr) env->DeleteGlobalRef(g_mainActivity);
-    g_mainActivity = env->NewGlobalRef(thiz);
-}
-
-JNIEXPORT void JNICALL
 Java_com_wowmobile_client_MainActivity_initWoWEngine(JNIEnv* env, jobject thiz, jobject surface) {
+    if (surface == nullptr) return;
     ANativeWindow* nativeWindow = ANativeWindow_fromSurface(env, surface);
     if (nativeWindow == nullptr) return;
-    g_WoWApplication = std::make_unique<WoWee::Application>();
+
+    g_WoWApplication = std::make_unique<Application>();
     g_WoWApplication->Initialize(nativeWindow);
 }
 
@@ -175,16 +171,11 @@ Java_com_wowmobile_client_MainActivity_connectToServer(JNIEnv* env, jobject thiz
     std::string c_user = jstringToString(env, user);
     std::string c_pass = jstringToString(env, pass);
 
-    g_WoWWorldSocket = std::make_unique<WoWee::WorldSocket>();
+    g_WoWWorldSocket = std::make_unique<WorldSocket>();
     if (g_WoWWorldSocket->Connect(c_host, port)) {
-        WoWee::AuthHandler auth(g_WoWWorldSocket.get());
+        AuthHandler auth(g_WoWWorldSocket.get());
         auth.StartAuthentication(c_user, c_pass);
     }
-}
-
-jint JNI_OnLoad(JavaVM* vm, void* reserved) {
-    g_vm = vm;
-    return JNI_VERSION_1_6;
 }
 
 } // extern "C"
