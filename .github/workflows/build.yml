@@ -177,7 +177,18 @@ jobs:
 
 
       # ============================================================
-      # 11. Limpiar (Usando 'gradle' global)
+      # 11. Instalar OpenSSL precompilado para Android
+      # ============================================================
+
+      - name: Install OpenSSL for Android
+        uses: violetitu/openssl-android-action@v1
+        with:
+          vcpkg_version: '2024.04.26'
+          targets: 'arm64-v8a'
+
+
+      # ============================================================
+      # 12. Limpiar (Usando 'gradle' global)
       # ============================================================
 
       - name: Clean
@@ -189,7 +200,7 @@ jobs:
 
 
       # ============================================================
-      # 12. Compilar (Usando 'gradle' global)
+      # 13. Compilar (Usando 'gradle' global e inyectando OpenSSL)
       # ============================================================
 
       - name: Build Debug APK
@@ -199,10 +210,15 @@ jobs:
             --no-daemon \
             --stacktrace \
             --info
+        env:
+          OPENSSL_ROOT_DIR: ${{ github.workspace }}/openssl-android/arm64-v8a
+          OPENSSL_INCLUDE_DIR: ${{ github.workspace }}/openssl-android/arm64-v8a/include
+          OPENSSL_CRYPTO_LIBRARY: ${{ github.workspace }}/openssl-android/arm64-v8a/lib/libcrypto.a
+          OPENSSL_SSL_LIBRARY: ${{ github.workspace }}/openssl-android/arm64-v8a/lib/libssl.a
 
 
       # ============================================================
-      # 13. Buscar APK
+      # 14. Buscar APK
       # ============================================================
 
       - name: Locate APK
@@ -216,7 +232,7 @@ jobs:
 
 
       # ============================================================
-      # 14. Descargar APK
+      # 15. Descargar APK
       # ============================================================
 
       - name: Upload APK
