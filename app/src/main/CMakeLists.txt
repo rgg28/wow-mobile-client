@@ -5,6 +5,7 @@ project("wowmobile")
 add_library(
         wowmobile
         SHARED
+
         wow_engine.cpp
         wow_renderer.cpp
 )
@@ -29,16 +30,11 @@ find_library(
         EGL
 )
 
-find_library(
-        vulkan-lib
-        vulkan
-)
-
 target_link_libraries(
         wowmobile
+
         ${log-lib}
         ${android-lib}
         ${gles-lib}
         ${egl-lib}
-        ${vulkan-lib}
 )
