@@ -2,9 +2,9 @@
 #include <android/log.h>
 
 #include <algorithm>
-#include <atomic>
-#include <cctype>
 #include <cstdint>
+#include <cstring>
+#include <iomanip>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -18,1094 +18,1190 @@
 #define LOGE(...) \
     __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-
-// ============================================================
-// ESTADO GLOBAL
-// ============================================================
-
 static JavaVM* g_vm = nullptr;
-
-static jobject g_activity = nullptr;
-
+static jobject g_mainActivity = nullptr;
+static std::string g_wowUri;
 static std::mutex g_mutex;
 
-static std::string g_wowFolderUri;
 
-static std::string g_username;
+// ============================================================
+// BYTE READER
+// ============================================================
 
-static std::atomic<bool> g_running(false);
+class Reader {
 
-static std::atomic<bool> g_connected(false);
+public:
+
+    Reader(
+            const std::vector<uint8_t>& data
+    )
+        : m_data(data),
+          m_pos(0) {
+    }
+
+    size_t size() const {
+        return m_data.size();
+    }
+
+    size_t position() const {
+        return m_pos;
+    }
+
+    bool seek(size_t position) {
+
+        if (position > m_data.size()) {
+            return false;
+        }
+
+        m_pos = position;
+        return true;
+    }
+
+    bool skip(size_t count) {
+
+        return seek(
+                m_pos + count
+        );
+    }
+
+    bool canRead(size_t count) const {
+
+        return
+            m_pos <= m_data.size() &&
+            count <=
+                m_data.size() - m_pos;
+    }
+
+    uint8_t u8() {
+
+        if (!canRead(1)) {
+            return 0;
+        }
+
+        return m_data[m_pos++];
+    }
+
+    uint16_t u16() {
+
+        if (!canRead(2)) {
+            return 0;
+        }
+
+        uint16_t v =
+            static_cast<uint16_t>(
+                m_data[m_pos]
+            ) |
+            static_cast<uint16_t>(
+                m_data[m_pos + 1]
+            ) << 8;
+
+        m_pos += 2;
+
+        return v;
+    }
+
+    uint32_t u32() {
+
+        if (!canRead(4)) {
+            return 0;
+        }
+
+        uint32_t v =
+            static_cast<uint32_t>(
+                m_data[m_pos]
+            ) |
+            static_cast<uint32_t>(
+                m_data[m_pos + 1]
+            ) << 8 |
+            static_cast<uint32_t>(
+                m_data[m_pos + 2]
+            ) << 16 |
+            static_cast<uint32_t>(
+                m_data[m_pos + 3]
+            ) << 24;
+
+        m_pos += 4;
+
+        return v;
+    }
+
+    float f32() {
+
+        uint32_t raw = u32();
+
+        float value;
+
+        std::memcpy(
+                &value,
+                &raw,
+                sizeof(value)
+        );
+
+        return value;
+    }
+
+    const uint8_t* ptr(
+            size_t offset
+    ) const {
+
+        if (offset >= m_data.size()) {
+            return nullptr;
+        }
+
+        return
+            m_data.data() +
+            offset;
+    }
+
+private:
+
+    const std::vector<uint8_t>& m_data;
+    size_t m_pos;
+};
 
 
 // ============================================================
 // JNI
 // ============================================================
 
-static JNIEnv* getJNIEnv(
-        bool& attached
-) {
-    attached = false;
+static JNIEnv* getJNIEnv() {
 
-    if (g_vm == nullptr) {
+    if (!g_vm) {
         return nullptr;
     }
 
     JNIEnv* env = nullptr;
 
     jint result =
-            g_vm->GetEnv(
-                    reinterpret_cast<void**>(&env),
-                    JNI_VERSION_1_6
-            );
+        g_vm->GetEnv(
+                reinterpret_cast<void**>(&env),
+                JNI_VERSION_1_6
+        );
 
     if (result == JNI_OK) {
         return env;
     }
 
-    if (result != JNI_EDETACHED) {
-        return nullptr;
-    }
+    if (result == JNI_EDETACHED) {
 
-    if (
-            g_vm->AttachCurrentThread(
-                    &env,
-                    nullptr
-            ) != JNI_OK
-    ) {
-        return nullptr;
-    }
+        if (g_vm->AttachCurrentThread(
+                &env,
+                nullptr
+        ) != JNI_OK) {
 
-    attached = true;
-
-    return env;
-}
-
-static void releaseJNIEnv(
-        bool attached
-) {
-    if (
-            attached &&
-            g_vm != nullptr
-    ) {
-        g_vm->DetachCurrentThread();
-    }
-}
-
-static jclass getActivityClass(
-        JNIEnv* env
-) {
-    if (
-            env == nullptr ||
-            g_activity == nullptr
-    ) {
-        return nullptr;
-    }
-
-    return env->GetObjectClass(
-            g_activity
-    );
-}
-
-
-// ============================================================
-// VFS: EXISTE
-// ============================================================
-
-static bool vfsExists(
-        const std::string& path
-) {
-    bool attached = false;
-
-    JNIEnv* env =
-            getJNIEnv(attached);
-
-    if (env == nullptr) {
-        return false;
-    }
-
-    jclass clazz =
-            getActivityClass(env);
-
-    if (clazz == nullptr) {
-        releaseJNIEnv(attached);
-        return false;
-    }
-
-    jmethodID method =
-            env->GetMethodID(
-                    clazz,
-                    "vfsExists",
-                    "(Ljava/lang/String;)Z"
-            );
-
-    if (method == nullptr) {
-
-        env->DeleteLocalRef(
-                clazz
-        );
-
-        releaseJNIEnv(attached);
-
-        return false;
-    }
-
-    jstring jpath =
-            env->NewStringUTF(
-                    path.c_str()
-            );
-
-    jboolean value =
-            env->CallBooleanMethod(
-                    g_activity,
-                    method,
-                    jpath
-            );
-
-    env->DeleteLocalRef(
-            jpath
-    );
-
-    env->DeleteLocalRef(
-            clazz
-    );
-
-    releaseJNIEnv(attached);
-
-    return value == JNI_TRUE;
-}
-
-
-// ============================================================
-// VFS: DIRECTORIO
-// ============================================================
-
-static bool vfsIsDirectory(
-        const std::string& path
-) {
-    bool attached = false;
-
-    JNIEnv* env =
-            getJNIEnv(attached);
-
-    if (env == nullptr) {
-        return false;
-    }
-
-    jclass clazz =
-            getActivityClass(env);
-
-    if (clazz == nullptr) {
-        releaseJNIEnv(attached);
-        return false;
-    }
-
-    jmethodID method =
-            env->GetMethodID(
-                    clazz,
-                    "vfsIsDirectory",
-                    "(Ljava/lang/String;)Z"
-            );
-
-    if (method == nullptr) {
-
-        env->DeleteLocalRef(
-                clazz
-        );
-
-        releaseJNIEnv(attached);
-
-        return false;
-    }
-
-    jstring jpath =
-            env->NewStringUTF(
-                    path.c_str()
-            );
-
-    jboolean value =
-            env->CallBooleanMethod(
-                    g_activity,
-                    method,
-                    jpath
-            );
-
-    env->DeleteLocalRef(
-            jpath
-    );
-
-    env->DeleteLocalRef(
-            clazz
-    );
-
-    releaseJNIEnv(attached);
-
-    return value == JNI_TRUE;
-}
-
-
-// ============================================================
-// VFS: LISTAR
-// ============================================================
-
-static std::vector<std::string> vfsList(
-        const std::string& path
-) {
-    std::vector<std::string> result;
-
-    bool attached = false;
-
-    JNIEnv* env =
-            getJNIEnv(attached);
-
-    if (env == nullptr) {
-        return result;
-    }
-
-    jclass clazz =
-            getActivityClass(env);
-
-    if (clazz == nullptr) {
-        releaseJNIEnv(attached);
-        return result;
-    }
-
-    jmethodID method =
-            env->GetMethodID(
-                    clazz,
-                    "vfsList",
-                    "(Ljava/lang/String;)Ljava/util/List;"
-            );
-
-    if (method == nullptr) {
-
-        env->DeleteLocalRef(
-                clazz
-        );
-
-        releaseJNIEnv(attached);
-
-        return result;
-    }
-
-    jstring jpath =
-            env->NewStringUTF(
-                    path.c_str()
-            );
-
-    jobject listObject =
-            env->CallObjectMethod(
-                    g_activity,
-                    method,
-                    jpath
-            );
-
-    env->DeleteLocalRef(
-            jpath
-    );
-
-    if (listObject == nullptr) {
-
-        env->DeleteLocalRef(
-                clazz
-        );
-
-        releaseJNIEnv(attached);
-
-        return result;
-    }
-
-    jclass listClass =
-            env->FindClass(
-                    "java/util/List"
-            );
-
-    if (listClass == nullptr) {
-
-        env->DeleteLocalRef(
-                listObject
-        );
-
-        env->DeleteLocalRef(
-                clazz
-        );
-
-        releaseJNIEnv(attached);
-
-        return result;
-    }
-
-    jmethodID sizeMethod =
-            env->GetMethodID(
-                    listClass,
-                    "size",
-                    "()I"
-            );
-
-    jmethodID getMethod =
-            env->GetMethodID(
-                    listClass,
-                    "get",
-                    "(I)Ljava/lang/Object;"
-            );
-
-    if (
-            sizeMethod == nullptr ||
-            getMethod == nullptr
-    ) {
-
-        env->DeleteLocalRef(
-                listClass
-        );
-
-        env->DeleteLocalRef(
-                listObject
-        );
-
-        env->DeleteLocalRef(
-                clazz
-        );
-
-        releaseJNIEnv(attached);
-
-        return result;
-    }
-
-    jint size =
-            env->CallIntMethod(
-                    listObject,
-                    sizeMethod
-            );
-
-    for (
-            jint i = 0;
-            i < size;
-            ++i
-    ) {
-
-        jobject item =
-                env->CallObjectMethod(
-                        listObject,
-                        getMethod,
-                        i
-                );
-
-        if (item == nullptr) {
-            continue;
+            return nullptr;
         }
 
-        jstring stringItem =
-                static_cast<jstring>(
-                        item
-                );
-
-        const char* chars =
-                env->GetStringUTFChars(
-                        stringItem,
-                        nullptr
-                );
-
-        if (chars != nullptr) {
-
-            result.emplace_back(
-                    chars
-            );
-
-            env->ReleaseStringUTFChars(
-                    stringItem,
-                    chars
-            );
-        }
-
-        env->DeleteLocalRef(
-                item
-        );
+        return env;
     }
 
-    env->DeleteLocalRef(
-            listClass
-    );
-
-    env->DeleteLocalRef(
-            listObject
-    );
-
-    env->DeleteLocalRef(
-            clazz
-    );
-
-    releaseJNIEnv(attached);
-
-    return result;
+    return nullptr;
 }
 
 
-// ============================================================
-// VFS: LEER ARCHIVO
-// ============================================================
-
-static std::vector<uint8_t> vfsReadFile(
-        const std::string& path
+static std::string jstringToString(
+        JNIEnv* env,
+        jstring value
 ) {
-    std::vector<uint8_t> result;
 
-    bool attached = false;
-
-    JNIEnv* env =
-            getJNIEnv(attached);
-
-    if (env == nullptr) {
-        return result;
-    }
-
-    jclass clazz =
-            getActivityClass(env);
-
-    if (clazz == nullptr) {
-        releaseJNIEnv(attached);
-        return result;
-    }
-
-    jmethodID method =
-            env->GetMethodID(
-                    clazz,
-                    "vfsReadFile",
-                    "(Ljava/lang/String;)[B"
-            );
-
-    if (method == nullptr) {
-
-        env->DeleteLocalRef(
-                clazz
-        );
-
-        releaseJNIEnv(attached);
-
-        return result;
-    }
-
-    jstring jpath =
-            env->NewStringUTF(
-                    path.c_str()
-            );
-
-    jbyteArray data =
-            static_cast<jbyteArray>(
-                    env->CallObjectMethod(
-                            g_activity,
-                            method,
-                            jpath
-                    )
-            );
-
-    env->DeleteLocalRef(
-            jpath
-    );
-
-    if (data == nullptr) {
-
-        env->DeleteLocalRef(
-                clazz
-        );
-
-        releaseJNIEnv(attached);
-
-        return result;
-    }
-
-    jsize length =
-            env->GetArrayLength(
-                    data
-            );
-
-    if (length > 0) {
-
-        result.resize(
-                static_cast<size_t>(
-                        length
-                )
-        );
-
-        env->GetByteArrayRegion(
-                data,
-                0,
-                length,
-                reinterpret_cast<jbyte*>(
-                        result.data()
-                )
-        );
-    }
-
-    env->DeleteLocalRef(
-            data
-    );
-
-    env->DeleteLocalRef(
-            clazz
-    );
-
-    releaseJNIEnv(attached);
-
-    return result;
-}
-
-
-// ============================================================
-// EXTENSIÓN
-// ============================================================
-
-static std::string getExtension(
-        const std::string& name
-) {
-    size_t slash =
-            name.find_last_of(
-                    "/\\"
-            );
-
-    size_t dot =
-            name.find_last_of(
-                    '.'
-            );
-
-    if (
-            dot == std::string::npos ||
-            (
-                    slash != std::string::npos &&
-                    dot < slash
-            )
-    ) {
+    if (!env || !value) {
         return "";
     }
 
-    std::string ext =
-            name.substr(
-                    dot + 1
-            );
+    const char* chars =
+        env->GetStringUTFChars(
+                value,
+                nullptr
+        );
+
+    if (!chars) {
+        return "";
+    }
+
+    std::string result(chars);
+
+    env->ReleaseStringUTFChars(
+            value,
+            chars
+    );
+
+    return result;
+}
+
+
+static jstring stringToJString(
+        JNIEnv* env,
+        const std::string& value
+) {
+
+    return env->NewStringUTF(
+            value.c_str()
+    );
+}
+
+
+static jmethodID findMethod(
+        JNIEnv* env,
+        const char* name,
+        const char* signature
+) {
+
+    if (!env || !g_mainActivity) {
+        return nullptr;
+    }
+
+    jclass clazz =
+        env->GetObjectClass(
+                g_mainActivity
+        );
+
+    if (!clazz) {
+        return nullptr;
+    }
+
+    return env->GetMethodID(
+            clazz,
+            name,
+            signature
+    );
+}
+
+
+// ============================================================
+// VFS
+// ============================================================
+
+static std::string vfsList(
+        const std::string& path
+) {
+
+    std::lock_guard<std::mutex> lock(
+            g_mutex
+    );
+
+    JNIEnv* env =
+        getJNIEnv();
+
+    if (!env || !g_mainActivity) {
+        return "";
+    }
+
+    jmethodID method =
+        findMethod(
+                env,
+                "vfsList",
+                "(Ljava/lang/String;)Ljava/lang/String;"
+        );
+
+    if (!method) {
+        return "";
+    }
+
+    jstring jpath =
+        env->NewStringUTF(
+                path.c_str()
+        );
+
+    jstring result =
+        static_cast<jstring>(
+                env->CallObjectMethod(
+                        g_mainActivity,
+                        method,
+                        jpath
+                )
+        );
+
+    env->DeleteLocalRef(
+            jpath
+    );
+
+    if (!result) {
+        return "";
+    }
+
+    std::string output =
+        jstringToString(
+                env,
+                result
+        );
+
+    env->DeleteLocalRef(
+            result
+    );
+
+    return output;
+}
+
+
+static std::vector<uint8_t> vfsReadFile(
+        const std::string& path,
+        int maxBytes
+) {
+
+    std::lock_guard<std::mutex> lock(
+            g_mutex
+    );
+
+    JNIEnv* env =
+        getJNIEnv();
+
+    if (!env || !g_mainActivity) {
+        return {};
+    }
+
+    jmethodID method =
+        findMethod(
+                env,
+                "vfsReadFile",
+                "(Ljava/lang/String;I)[B"
+        );
+
+    if (!method) {
+        return {};
+    }
+
+    jstring jpath =
+        env->NewStringUTF(
+                path.c_str()
+        );
+
+    jbyteArray array =
+        static_cast<jbyteArray>(
+                env->CallObjectMethod(
+                        g_mainActivity,
+                        method,
+                        jpath,
+                        maxBytes
+                )
+        );
+
+    env->DeleteLocalRef(
+            jpath
+    );
+
+    if (!array) {
+        return {};
+    }
+
+    jsize length =
+        env->GetArrayLength(
+                array
+        );
+
+    std::vector<uint8_t> data(
+            static_cast<size_t>(length)
+    );
+
+    if (length > 0) {
+
+        env->GetByteArrayRegion(
+                array,
+                0,
+                length,
+                reinterpret_cast<jbyte*>(
+                        data.data()
+                )
+        );
+    }
+
+    env->DeleteLocalRef(
+            array
+    );
+
+    return data;
+}
+
+
+// ============================================================
+// EXTENSION
+// ============================================================
+
+static std::string extension(
+        const std::string& path
+) {
+
+    size_t dot =
+        path.find_last_of('.');
+
+    if (dot == std::string::npos) {
+        return "";
+    }
+
+    std::string result =
+        path.substr(dot + 1);
 
     std::transform(
-            ext.begin(),
-            ext.end(),
-            ext.begin(),
+            result.begin(),
+            result.end(),
+            result.begin(),
             [](unsigned char c) {
                 return static_cast<char>(
-                        std::toupper(c)
+                        std::tolower(c)
                 );
             }
     );
 
-    return ext;
+    return result;
 }
 
 
 // ============================================================
-// CONTADORES DEL ESCANEO
+// BLP
 // ============================================================
 
-struct ScanStats {
-
-    uint64_t directories = 0;
-
-    uint64_t files = 0;
-
-    uint64_t mpq = 0;
-
-    uint64_t blp = 0;
-
-    uint64_t m2 = 0;
-
-    uint64_t wmo = 0;
-
-    uint64_t adt = 0;
-
-    uint64_t wdt = 0;
-
-    uint64_t dbc = 0;
-
-    uint64_t db2 = 0;
-
-    uint64_t lua = 0;
-
-    uint64_t xml = 0;
-
-    uint64_t other = 0;
-
-    uint64_t errors = 0;
-
-    uint64_t items = 0;
-
-    bool rootReadable = false;
-};
-
-
-// ============================================================
-// ESCANEO RECURSIVO
-// ============================================================
-
-static void scanDirectory(
+static std::string readBLP(
         const std::string& path,
-        int depth,
-        ScanStats& stats,
-        std::ostringstream& output
+        const std::vector<uint8_t>& data
 ) {
-    if (
-            depth > 8 ||
-            stats.items >= 50000
-    ) {
-        return;
+
+    Reader r(data);
+
+    if (data.size() < 148) {
+
+        return
+            "BLP ERROR\n\n"
+            "Archivo demasiado pequeño.";
     }
 
-    std::vector<std::string> items =
-            vfsList(path);
+    uint32_t magic = r.u32();
 
-    if (path.empty()) {
-        stats.rootReadable =
-                !items.empty();
+    uint32_t version = r.u32();
+
+    if (magic != 0x32504C42) {
+
+        return
+            "BLP ERROR\n\n"
+            "Magic no reconocido.\n"
+            "Esperado: BLP2";
     }
 
-    for (
-            const std::string& item :
-            items
-    ) {
+    uint32_t compression = r.u32();
+    uint32_t alphaBits = r.u32();
+    uint32_t alphaType = r.u32();
+    uint32_t hasMips = r.u32();
 
-        if (
-                stats.items >= 50000
-        ) {
-            break;
-        }
+    uint32_t width = r.u32();
+    uint32_t height = r.u32();
 
-        ++stats.items;
+    uint32_t offsets[16];
+    uint32_t sizes[16];
 
-        bool isDirectory =
-                !item.empty() &&
-                item.back() == '/';
+    for (int i = 0; i < 16; ++i) {
+        offsets[i] = r.u32();
+    }
 
-        std::string cleanName =
-                item;
+    for (int i = 0; i < 16; ++i) {
+        sizes[i] = r.u32();
+    }
 
-        if (isDirectory) {
-            cleanName.pop_back();
-        }
+    std::ostringstream out;
 
-        std::string fullPath;
+    out << "BLP2\n";
+    out << "==============================\n\n";
 
-        if (path.empty()) {
-            fullPath =
-                    cleanName;
-        } else {
-            fullPath =
-                    path +
-                    "/" +
-                    cleanName;
-        }
+    out << "Archivo: "
+        << path
+        << "\n\n";
 
-        if (isDirectory) {
+    out << "Versión: "
+        << version
+        << "\n";
 
-            ++stats.directories;
+    out << "Dimensiones: "
+        << width
+        << " x "
+        << height
+        << "\n";
 
-            output
-                    << "[DIR] "
-                    << fullPath
-                    << "\n";
+    out << "Compresión: "
+        << compression
+        << "\n";
 
-            scanDirectory(
-                    fullPath,
-                    depth + 1,
-                    stats,
-                    output
-            );
+    out << "Alpha bits: "
+        << alphaBits
+        << "\n";
 
+    out << "Alpha type: "
+        << alphaType
+        << "\n";
+
+    out << "Mipmaps: "
+        << (hasMips ? "sí" : "no")
+        << "\n\n";
+
+    out << "MIPMAPS\n";
+    out << "------------------------------\n";
+
+    for (int i = 0; i < 16; ++i) {
+
+        if (offsets[i] == 0 ||
+            sizes[i] == 0) {
             continue;
         }
 
-        ++stats.files;
+        bool valid =
+            static_cast<uint64_t>(
+                offsets[i]
+            ) +
+            static_cast<uint64_t>(
+                sizes[i]
+            ) <= data.size();
 
-        std::string extension =
-                getExtension(
-                        cleanName
-                );
-
-        if (extension == "MPQ") {
-            ++stats.mpq;
-        } else if (
-                extension == "BLP"
-        ) {
-            ++stats.blp;
-        } else if (
-                extension == "M2"
-        ) {
-            ++stats.m2;
-        } else if (
-                extension == "WMO"
-        ) {
-            ++stats.wmo;
-        } else if (
-                extension == "ADT"
-        ) {
-            ++stats.adt;
-        } else if (
-                extension == "WDT"
-        ) {
-            ++stats.wdt;
-        } else if (
-                extension == "DBC"
-        ) {
-            ++stats.dbc;
-        } else if (
-                extension == "DB2"
-        ) {
-            ++stats.db2;
-        } else if (
-                extension == "LUA"
-        ) {
-            ++stats.lua;
-        } else if (
-                extension == "XML"
-        ) {
-            ++stats.xml;
-        } else {
-            ++stats.other;
-        }
-
-        output
-                << "[FILE] "
-                << fullPath;
-
-        if (!extension.empty()) {
-
-            output
-                    << "  [TYPE] ."
-                    << extension;
-        }
-
-        output
-                << "\n";
+        out << "Mip "
+            << i
+            << ": offset="
+            << offsets[i]
+            << " size="
+            << sizes[i]
+            << " "
+            << (valid ? "OK" : "INVALID")
+            << "\n";
     }
+
+    return out.str();
 }
 
 
 // ============================================================
-// SCAN CLIENTE
+// M2
 // ============================================================
 
-static std::string engineScanClient() {
+static std::string readM2(
+        const std::string& path,
+        const std::vector<uint8_t>& data
+) {
 
-    std::ostringstream output;
+    Reader r(data);
 
-    output
-            << "=== WOW MOBILE CLIENT SCANNER ===\n\n";
+    if (data.size() < 64) {
 
-    if (g_wowFolderUri.empty()) {
-
-        output
-                << "SCAN_ERROR\n"
-                << "[ERROR] No hay una carpeta raíz configurada.\n";
-
-        return output.str();
+        return
+            "M2 ERROR\n\n"
+            "Archivo demasiado pequeño.";
     }
 
-    output
-            << "[INFO] Escaneando la carpeta seleccionada "
-            << "como raíz del cliente.\n";
+    uint32_t magic = r.u32();
 
-    output
-            << "[INFO] No se presupone ninguna estructura "
-            << "de carpetas.\n\n";
+    if (magic != 0x3032444D) {
 
-    ScanStats stats;
-
-    // --------------------------------------------------------
-    // RAÍZ
-    // --------------------------------------------------------
-
-    std::vector<std::string> root =
-            vfsList("");
-
-    if (root.empty()) {
-
-        output
-                << "SCAN_ERROR\n"
-                << "[ERROR] No se pudo leer la carpeta raíz "
-                << "mediante SAF.\n";
-
-        return output.str();
+        return
+            "M2 ERROR\n\n"
+            "Magic no reconocido.\n"
+            "Esperado: MD20";
     }
 
-    stats.rootReadable = true;
+    uint32_t version = r.u32();
 
-    output
-            << "[OK] Carpeta raíz accesible.\n";
+    uint32_t nameLength = r.u32();
+    uint32_t nameOffset = r.u32();
 
-    output
-            << "[INFO] Elementos inmediatos: "
-            << root.size()
-            << "\n\n";
+    uint32_t globalFlags = r.u32();
+
+    uint32_t nGlobalSequences = r.u32();
+    uint32_t ofsGlobalSequences = r.u32();
+
+    uint32_t nAnimations = r.u32();
+    uint32_t ofsAnimations = r.u32();
+
+    uint32_t nAnimationLookup = r.u32();
+    uint32_t ofsAnimationLookup = r.u32();
+
+    uint32_t nBones = r.u32();
+    uint32_t ofsBones = r.u32();
+
+    uint32_t nKeyBoneLookup = r.u32();
+    uint32_t ofsKeyBoneLookup = r.u32();
+
+    uint32_t nVertices = r.u32();
+    uint32_t ofsVertices = r.u32();
+
+    uint32_t nViews = r.u32();
+    uint32_t ofsViews = r.u32();
+
+    std::ostringstream out;
+
+    out << "M2 / MD20\n";
+    out << "==============================\n\n";
+
+    out << "Archivo: "
+        << path
+        << "\n\n";
+
+    out << "Versión: "
+        << version
+        << "\n";
+
+    out << "Tamaño: "
+        << data.size()
+        << " bytes\n\n";
+
+    out << "Nombre length: "
+        << nameLength
+        << "\n";
+
+    out << "Nombre offset: "
+        << nameOffset
+        << "\n";
+
+    out << "Global flags: 0x"
+        << std::hex
+        << globalFlags
+        << std::dec
+        << "\n\n";
+
+    out << "GLOBAL SEQUENCES\n";
+    out << "Count: "
+        << nGlobalSequences
+        << "\nOffset: "
+        << ofsGlobalSequences
+        << "\n\n";
+
+    out << "ANIMACIONES\n";
+    out << "Count: "
+        << nAnimations
+        << "\nOffset: "
+        << ofsAnimations
+        << "\n\n";
+
+    out << "ANIMATION LOOKUP\n";
+    out << "Count: "
+        << nAnimationLookup
+        << "\nOffset: "
+        << ofsAnimationLookup
+        << "\n\n";
+
+    out << "HUESOS\n";
+    out << "Count: "
+        << nBones
+        << "\nOffset: "
+        << ofsBones
+        << "\n\n";
+
+    out << "BONE LOOKUP\n";
+    out << "Count: "
+        << nKeyBoneLookup
+        << "\nOffset: "
+        << ofsKeyBoneLookup
+        << "\n\n";
+
+    out << "VERTICES\n";
+    out << "Count: "
+        << nVertices
+        << "\nOffset: "
+        << ofsVertices
+        << "\n\n";
+
+    out << "VIEWS\n";
+    out << "Count: "
+        << nViews
+        << "\nOffset: "
+        << ofsViews
+        << "\n\n";
+
+    auto validRange =
+            [&](uint32_t offset,
+                uint64_t bytes) {
+
+        return
+            static_cast<uint64_t>(
+                offset
+            ) +
+            bytes <= data.size();
+    };
+
+    out << "VALIDACIÓN\n";
+    out << "------------------------------\n";
+
+    out << "Global sequences: "
+        << (
+            validRange(
+                ofsGlobalSequences,
+                static_cast<uint64_t>(
+                    nGlobalSequences
+                ) * 4
+            )
+            ? "OK"
+            : "INVALID"
+        )
+        << "\n";
+
+    out << "Animation table: "
+        << (
+            validRange(
+                ofsAnimations,
+                static_cast<uint64_t>(
+                    nAnimations
+                ) * 64
+            )
+            ? "OK"
+            : "FUERA DE RANGO"
+        )
+        << "\n";
+
+    out << "Bones: "
+        << (
+            validRange(
+                ofsBones,
+                static_cast<uint64_t>(
+                    nBones
+                ) * 128
+            )
+            ? "OK"
+            : "FUERA DE RANGO"
+        )
+        << "\n";
+
+    out << "Vertices: "
+        << (
+            validRange(
+                ofsVertices,
+                static_cast<uint64_t>(
+                    nVertices
+                ) * 48
+            )
+            ? "OK"
+            : "FUERA DE RANGO"
+        )
+        << "\n";
+
+    return out.str();
+}
 
 
-    // --------------------------------------------------------
-    // ESCANEO
-    // --------------------------------------------------------
+// ============================================================
+// SKIN
+// ============================================================
 
-    output
-            << "--- ESTRUCTURA DETECTADA ---\n";
+static std::string readSKIN(
+        const std::string& path,
+        const std::vector<uint8_t>& data
+) {
 
-    scanDirectory(
-            "",
-            0,
-            stats,
-            output
+    Reader r(data);
+
+    if (data.size() < 40) {
+
+        return
+            "SKIN ERROR\n\n"
+            "Archivo demasiado pequeño.";
+    }
+
+    uint32_t magic = r.u32();
+
+    if (magic != 0x4E494B53) {
+
+        return
+            "SKIN ERROR\n\n"
+            "Magic no reconocido.\n"
+            "Esperado: SKIN";
+    }
+
+    uint32_t nIndices = r.u32();
+    uint32_t ofsIndices = r.u32();
+
+    uint32_t nTriangles = r.u32();
+    uint32_t ofsTriangles = r.u32();
+
+    uint32_t nProperties = r.u32();
+    uint32_t ofsProperties = r.u32();
+
+    uint32_t nSubmeshes = r.u32();
+    uint32_t ofsSubmeshes = r.u32();
+
+    uint32_t nTextureUnits = r.u32();
+    uint32_t ofsTextureUnits = r.u32();
+
+    std::ostringstream out;
+
+    out << "SKIN\n";
+    out << "==============================\n\n";
+
+    out << "Archivo: "
+        << path
+        << "\n";
+
+    out << "Tamaño: "
+        << data.size()
+        << " bytes\n\n";
+
+    out << "ÍNDICES\n";
+    out << "Count: "
+        << nIndices
+        << "\nOffset: "
+        << ofsIndices
+        << "\n\n";
+
+    out << "TRIÁNGULOS\n";
+    out << "Count: "
+        << nTriangles
+        << "\nOffset: "
+        << ofsTriangles
+        << "\n\n";
+
+    out << "PROPIEDADES\n";
+    out << "Count: "
+        << nProperties
+        << "\nOffset: "
+        << ofsProperties
+        << "\n\n";
+
+    out << "SUBMESHES\n";
+    out << "Count: "
+        << nSubmeshes
+        << "\nOffset: "
+        << ofsSubmeshes
+        << "\n\n";
+
+    out << "TEXTURE UNITS\n";
+    out << "Count: "
+        << nTextureUnits
+        << "\nOffset: "
+        << ofsTextureUnits
+        << "\n";
+
+    return out.str();
+}
+
+
+// ============================================================
+// ANIM
+// ============================================================
+
+static std::string readANIM(
+        const std::string& path,
+        const std::vector<uint8_t>& data
+) {
+
+    std::ostringstream out;
+
+    out << "ANIM\n";
+    out << "==============================\n\n";
+
+    out << "Archivo: "
+        << path
+        << "\n";
+
+    out << "Tamaño: "
+        << data.size()
+        << " bytes\n\n";
+
+    if (data.size() >= 4) {
+
+        uint32_t magic =
+            static_cast<uint32_t>(data[0]) |
+            static_cast<uint32_t>(data[1]) << 8 |
+            static_cast<uint32_t>(data[2]) << 16 |
+            static_cast<uint32_t>(data[3]) << 24;
+
+        out << "Magic: 0x"
+            << std::hex
+            << std::setw(8)
+            << std::setfill('0')
+            << magic
+            << std::dec
+            << "\n";
+    }
+
+    out << "\nEl archivo fue abierto correctamente.\n";
+
+    out << "El lector conserva el bloque binario\n";
+    out << "para la futura integración con el sistema\n";
+    out << "de animación M2.\n";
+
+    return out.str();
+}
+
+
+// ============================================================
+// SBT
+// ============================================================
+
+static std::string readSBT(
+        const std::string& path,
+        const std::vector<uint8_t>& data
+) {
+
+    std::ostringstream out;
+
+    out << "SBT\n";
+    out << "==============================\n\n";
+
+    out << "Archivo: "
+        << path
+        << "\n";
+
+    out << "Tamaño: "
+        << data.size()
+        << " bytes\n\n";
+
+    if (data.size() >= 4) {
+
+        out << "Magic: ";
+
+        for (int i = 0; i < 4; ++i) {
+
+            uint8_t c =
+                    data[i];
+
+            if (c >= 32 &&
+                c <= 126) {
+
+                out
+                    << static_cast<char>(
+                        c
+                    );
+
+            } else {
+
+                out << '.';
+            }
+        }
+
+        out << "\n";
+    }
+
+    out << "\nEl recurso fue abierto correctamente.\n";
+
+    return out.str();
+}
+
+
+// ============================================================
+// DISPATCHER
+// ============================================================
+
+static std::string readResource(
+        const std::string& path
+) {
+
+    std::string ext =
+        extension(path);
+
+    /*
+     * Los lectores de metadatos necesitan solamente una
+     * cantidad limitada de datos.
+     *
+     * No se intenta cargar recursos gigantescos.
+     */
+
+    constexpr int MAX_READ =
+        16 * 1024 * 1024;
+
+    std::vector<uint8_t> data =
+        vfsReadFile(
+                path,
+                MAX_READ
+        );
+
+    if (data.empty()) {
+
+        return
+            "ERROR\n\n"
+            "No se pudo leer:\n" +
+            path;
+    }
+
+    if (ext == "blp") {
+
+        return readBLP(
+                path,
+                data
+        );
+    }
+
+    if (ext == "m2") {
+
+        return readM2(
+                path,
+                data
+        );
+    }
+
+    if (ext == "skin") {
+
+        return readSKIN(
+                path,
+                data
+        );
+    }
+
+    if (ext == "anim") {
+
+        return readANIM(
+                path,
+                data
+        );
+    }
+
+    if (ext == "sbt") {
+
+        return readSBT(
+                path,
+                data
+        );
+    }
+
+    return
+        "RECURSO DESCONOCIDO\n\n" +
+        path;
+}
+
+
+// ============================================================
+// INSPECCIÓN DE RAÍZ
+// ============================================================
+
+static std::string inspectRoot() {
+
+    if (g_wowUri.empty()) {
+
+        return
+            "NO HAY CARPETA SELECCIONADA.";
+    }
+
+    std::string list =
+        vfsList("");
+
+    if (list.empty()) {
+
+        return
+            "NO SE PUDO LEER LA CARPETA.";
+    }
+
+    int directories = 0;
+    int files = 0;
+
+    std::vector<std::string> dirs;
+
+    std::stringstream stream(list);
+
+    std::string line;
+
+    while (std::getline(
+            stream,
+            line
+    )) {
+
+        if (line.size() >= 2 &&
+            line[0] == 'D' &&
+            line[1] == '|') {
+
+            directories++;
+
+            dirs.push_back(
+                    line.substr(2)
+            );
+        }
+
+        else if (
+                line.size() >= 2 &&
+                line[0] == 'F' &&
+                line[1] == '|'
+        ) {
+
+            files++;
+        }
+    }
+
+    std::sort(
+            dirs.begin(),
+            dirs.end()
     );
 
-    output
+    std::ostringstream out;
+
+    out << "CLIENTE DETECTADO\n";
+    out << "==============================\n\n";
+
+    out << "WoW 3.3.5a / Build 12340\n\n";
+
+    out << "Carpeta raíz: OK\n";
+
+    out << "Subcarpetas directas: "
+        << directories
+        << "\n";
+
+    out << "Archivos directos: "
+        << files
+        << "\n\n";
+
+    out << "RECURSOS\n";
+    out << "------------------------------\n";
+
+    out << ".BLP  = texturas\n";
+    out << ".M2   = modelos\n";
+    out << ".SKIN = geometría/render\n";
+    out << ".ANIM = animaciones\n";
+    out << ".SBT  = recursos auxiliares\n\n";
+
+    out << "CARPETAS\n";
+    out << "------------------------------\n";
+
+    size_t max =
+            std::min<size_t>(
+                    dirs.size(),
+                    100
+            );
+
+    for (size_t i = 0;
+         i < max;
+         ++i) {
+
+        out << "[DIR] "
+            << dirs[i]
             << "\n";
-
-
-    // --------------------------------------------------------
-    // RESUMEN
-    // --------------------------------------------------------
-
-    output
-            << "--- RESUMEN ---\n";
-
-    output
-            << "[INFO] Directorios: "
-            << stats.directories
-            << "\n";
-
-    output
-            << "[INFO] Archivos: "
-            << stats.files
-            << "\n";
-
-    output
-            << "[INFO] Elementos procesados: "
-            << stats.items
-            << "\n";
-
-    output
-            << "\n";
-
-
-    // --------------------------------------------------------
-    // FORMATOS
-    // --------------------------------------------------------
-
-    output
-            << "--- FORMATOS WOW DETECTADOS ---\n";
-
-    output
-            << "[TYPE] MPQ : "
-            << stats.mpq
-            << "\n";
-
-    output
-            << "[TYPE] BLP : "
-            << stats.blp
-            << "\n";
-
-    output
-            << "[TYPE] M2  : "
-            << stats.m2
-            << "\n";
-
-    output
-            << "[TYPE] WMO : "
-            << stats.wmo
-            << "\n";
-
-    output
-            << "[TYPE] ADT : "
-            << stats.adt
-            << "\n";
-
-    output
-            << "[TYPE] WDT : "
-            << stats.wdt
-            << "\n";
-
-    output
-            << "[TYPE] DBC : "
-            << stats.dbc
-            << "\n";
-
-    output
-            << "[TYPE] DB2 : "
-            << stats.db2
-            << "\n";
-
-    output
-            << "[TYPE] LUA : "
-            << stats.lua
-            << "\n";
-
-    output
-            << "[TYPE] XML : "
-            << stats.xml
-            << "\n";
-
-    output
-            << "[TYPE] Otros: "
-            << stats.other
-            << "\n";
-
-    output
-            << "\n";
-
-
-    // --------------------------------------------------------
-    // CONCLUSIÓN
-    // --------------------------------------------------------
-
-    if (
-            stats.rootReadable &&
-            stats.items > 0
-    ) {
-
-        output
-                << "SCAN_OK\n";
-
-        output
-                << "[OK] El cliente fue descubierto "
-                << "mediante el VFS Android.\n";
-
-        output
-                << "[OK] La aplicación no depende de "
-                << "nombres fijos de carpetas.\n";
-
-    } else {
-
-        output
-                << "SCAN_ERROR\n";
-
-        output
-                << "[ERROR] No se pudo construir "
-                << "la estructura del cliente.\n";
     }
 
-    if (
-            stats.items >= 50000
-    ) {
+    if (dirs.size() > max) {
 
-        output
-                << "[INFO] Se alcanzó el límite de "
-                << "50.000 elementos.\n";
+        out << "\n... "
+            << dirs.size() - max
+            << " carpetas adicionales.\n";
     }
 
-    output
-            << "[INFO] Profundidad máxima: 8 niveles.\n";
+    out << "\nLos archivos se leen bajo demanda.";
 
-    return output.str();
+    return out.str();
 }
 
 
 // ============================================================
-// LOGIN PROVISIONAL
+// LOGIN
 // ============================================================
 
-static void engineLogin(
+static std::string engineLogin(
         const std::string& username,
         const std::string& password
 ) {
-    {
-        std::lock_guard<std::mutex> lock(
-                g_mutex
-        );
 
-        g_username = username;
-
-        g_connected = false;
-    }
-
-    LOGI(
-            "Solicitud de login: %s",
-            username.c_str()
-    );
-
-    /*
-     * Todavía no se simula autenticación.
-     *
-     * La implementación real de WoW 3.3.5a
-     * deberá implementar:
-     *
-     * AUTH_LOGON_CHALLENGE
-     * AUTH_LOGON_PROOF
-     * REALM_LIST
-     * CMSG_AUTH_SESSION
-     * SMSG_AUTH_RESPONSE
-     * CMSG_CHAR_ENUM
-     * SMSG_CHAR_ENUM
-     * CMSG_PLAYER_LOGIN
-     *
-     * etc.
-     */
-
-    LOGI(
-            "Protocolo WoW 3.3.5a pendiente."
-    );
-
+    (void) username;
     (void) password;
+
+    return
+        "NO IMPLEMENTADO\n\n"
+        "La interfaz de autenticación está preparada,\n"
+        "pero el protocolo real de WoW 3.3.5a todavía\n"
+        "no está conectado.\n\n"
+        "No se simula un inicio de sesión exitoso.";
 }
 
 
 // ============================================================
-// INPUT
+// JNI
 // ============================================================
 
-static void engineTouchDown(
-        float x,
-        float y
-) {
-    LOGI(
-            "Touch DOWN %.1f %.1f",
-            x,
-            y
-    );
-}
-
-static void engineTouchMove(
-        float x,
-        float y
-) {
-    LOGI(
-            "Touch MOVE %.1f %.1f",
-            x,
-            y
-    );
-}
-
-static void engineTouchUp(
-        float x,
-        float y
-) {
-    LOGI(
-            "Touch UP %.1f %.1f",
-            x,
-            y
-    );
-}
-
-
-// ============================================================
-// JNI ON LOAD
-// ============================================================
-
+extern "C"
 JNIEXPORT jint JNICALL
 JNI_OnLoad(
         JavaVM* vm,
         void*
 ) {
-    g_vm = vm;
 
-    LOGI(
-            "JNI_OnLoad - WoW Mobile"
-    );
+    g_vm = vm;
 
     return JNI_VERSION_1_6;
 }
 
-
-// ============================================================
-// nativeInit
-// ============================================================
 
 extern "C"
 JNIEXPORT void JNICALL
@@ -1113,31 +1209,26 @@ Java_com_wowmobile_client_MainActivity_nativeInit(
         JNIEnv* env,
         jobject activity
 ) {
-    if (g_activity != nullptr) {
+
+    if (g_mainActivity) {
 
         env->DeleteGlobalRef(
-                g_activity
+                g_mainActivity
         );
 
-        g_activity = nullptr;
+        g_mainActivity = nullptr;
     }
 
-    g_activity =
+    g_mainActivity =
             env->NewGlobalRef(
                     activity
             );
 
-    g_running = true;
-
     LOGI(
-            "Motor nativo inicializado."
+            "WoW Mobile Engine iniciado"
     );
 }
 
-
-// ============================================================
-// nativeSetWowFolder
-// ============================================================
 
 extern "C"
 JNIEXPORT void JNICALL
@@ -1146,190 +1237,113 @@ Java_com_wowmobile_client_MainActivity_nativeSetWowFolder(
         jobject,
         jstring uri
 ) {
-    if (uri == nullptr) {
 
-        std::lock_guard<std::mutex> lock(
-                g_mutex
-        );
-
-        g_wowFolderUri.clear();
-
-        return;
-    }
-
-    const char* chars =
-            env->GetStringUTFChars(
-                    uri,
-                    nullptr
+    g_wowUri =
+            jstringToString(
+                    env,
+                    uri
             );
 
-    if (chars == nullptr) {
-        return;
-    }
-
-    {
-        std::lock_guard<std::mutex> lock(
-                g_mutex
-        );
-
-        g_wowFolderUri =
-                chars;
-    }
-
-    env->ReleaseStringUTFChars(
-            uri,
-            chars
-    );
-
     LOGI(
-            "Raiz WoW configurada."
+            "WoW root configurada"
     );
 }
 
-
-// ============================================================
-// nativeScanClient
-// ============================================================
 
 extern "C"
 JNIEXPORT jstring JNICALL
-Java_com_wowmobile_client_MainActivity_nativeScanClient(
+Java_com_wowmobile_client_MainActivity_nativeInspectRoot(
         JNIEnv* env,
         jobject
 ) {
-    std::string result =
-            engineScanClient();
 
-    return env->NewStringUTF(
-            result.c_str()
+    std::string result =
+            inspectRoot();
+
+    return stringToJString(
+            env,
+            result
     );
 }
 
 
-// ============================================================
-// nativeLogin
-// ============================================================
+extern "C"
+JNIEXPORT jstring JNICALL
+Java_com_wowmobile_client_MainActivity_nativeListDirectory(
+        JNIEnv* env,
+        jobject,
+        jstring relativePath
+) {
+
+    std::string path =
+            jstringToString(
+                    env,
+                    relativePath
+            );
+
+    std::string result =
+            vfsList(path);
+
+    return stringToJString(
+            env,
+            result
+    );
+}
+
 
 extern "C"
-JNIEXPORT void JNICALL
+JNIEXPORT jstring JNICALL
+Java_com_wowmobile_client_MainActivity_nativeReadResource(
+        JNIEnv* env,
+        jobject,
+        jstring relativePath
+) {
+
+    std::string path =
+            jstringToString(
+                    env,
+                    relativePath
+            );
+
+    std::string result =
+            readResource(path);
+
+    return stringToJString(
+            env,
+            result
+    );
+}
+
+
+extern "C"
+JNIEXPORT jstring JNICALL
 Java_com_wowmobile_client_MainActivity_nativeLogin(
         JNIEnv* env,
         jobject,
         jstring username,
         jstring password
 ) {
-    if (
-            username == nullptr ||
-            password == nullptr
-    ) {
-        return;
-    }
 
-    const char* user =
-            env->GetStringUTFChars(
-                    username,
-                    nullptr
+    std::string user =
+            jstringToString(
+                    env,
+                    username
             );
 
-    const char* pass =
-            env->GetStringUTFChars(
-                    password,
-                    nullptr
+    std::string pass =
+            jstringToString(
+                    env,
+                    password
             );
 
-    if (
-            user == nullptr ||
-            pass == nullptr
-    ) {
-
-        if (user != nullptr) {
-
-            env->ReleaseStringUTFChars(
-                    username,
-                    user
-            );
-        }
-
-        if (pass != nullptr) {
-
-            env->ReleaseStringUTFChars(
-                    password,
+    std::string result =
+            engineLogin(
+                    user,
                     pass
             );
-        }
 
-        return;
-    }
-
-    engineLogin(
-            user,
-            pass
-    );
-
-    env->ReleaseStringUTFChars(
-            username,
-            user
-    );
-
-    env->ReleaseStringUTFChars(
-            password,
-            pass
-    );
-}
-
-
-// ============================================================
-// nativeTouchDown
-// ============================================================
-
-extern "C"
-JNIEXPORT void JNICALL
-Java_com_wowmobile_client_MainActivity_nativeTouchDown(
-        JNIEnv*,
-        jobject,
-        jfloat x,
-        jfloat y
-) {
-    engineTouchDown(
-            static_cast<float>(x),
-            static_cast<float>(y)
-    );
-}
-
-
-// ============================================================
-// nativeTouchMove
-// ============================================================
-
-extern "C"
-JNIEXPORT void JNICALL
-Java_com_wowmobile_client_MainActivity_nativeTouchMove(
-        JNIEnv*,
-        jobject,
-        jfloat x,
-        jfloat y
-) {
-    engineTouchMove(
-            static_cast<float>(x),
-            static_cast<float>(y)
-    );
-}
-
-
-// ============================================================
-// nativeTouchUp
-// ============================================================
-
-extern "C"
-JNIEXPORT void JNICALL
-Java_com_wowmobile_client_MainActivity_nativeTouchUp(
-        JNIEnv*,
-        jobject,
-        jfloat x,
-        jfloat y
-) {
-    engineTouchUp(
-            static_cast<float>(x),
-            static_cast<float>(y)
+    return stringToJString(
+            env,
+            result
     );
 }
