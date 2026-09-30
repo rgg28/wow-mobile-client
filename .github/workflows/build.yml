@@ -203,7 +203,7 @@ jobs:
 
 
       # ============================================================
-      # 13. Modificar build.gradle e Iniciar Compilación Nativa
+      # 13. Parchear build.gradle + CMakeLists e Iniciar Compilación
       # ============================================================
 
       - name: Build Debug APK
@@ -215,11 +215,16 @@ jobs:
           # 2. Reemplazamos la línea estática dentro del build.gradle usando sed
           sed -i "s|arguments \"-DANDROID_STL=c++_shared\"|$NEW_CMAKE_ARGS|g" app/build.gradle
           
-          # 3. Imprimimos el bloque modificado en pantalla para confirmar la inyección
+          # 3. PARCHE DE CONTROL ESTRUCTURAL DE CMAKE:
+          # El error original indica que el target "wowmobile" no existe al momento de llamarlo en la l.218.
+          # Cambiamos "wowmobile" por la macro estándar de Android Studio para inyectar los includes de forma global.
+          sed -i 's|target_include_directories(wowmobile|include_directories(|g' app/src/main/CMakeLists.txt
+          
+          # 4. Imprimimos el bloque modificado en pantalla para confirmar la inyección de Gradle
           echo "=== app/build.gradle modificado de forma exitosa ==="
           cat app/build.gradle | grep -A 4 "externalNativeBuild {"
           
-          # 4. Compilamos la aplicación
+          # 5. Compilamos la aplicación
           gradle :app:assembleDebug \
             --no-daemon \
             --stacktrace \
