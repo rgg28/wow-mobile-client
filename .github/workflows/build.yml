@@ -16,7 +16,7 @@ jobs:
       ANDROID_BUILD_TOOLS: 35.0.0
       ANDROID_CMAKE_VERSION: 3.31.6
       ANDROID_NDK_VERSION: 28.2.13676358
-      JAVA_VERSION: 17
+      JAVA_VERSION: "17"
 
     steps:
 
@@ -30,7 +30,7 @@ jobs:
           fetch-depth: 0
 
       # ============================================================
-      # 2. WOWEE - SEGUNDO REPOSITORIO INDEPENDIENTE
+      # 2. WOWEE - REPOSITORIO INDEPENDIENTE
       # ============================================================
       - name: Checkout WoWee
         uses: actions/checkout@v4
@@ -40,6 +40,9 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      # ============================================================
+      # 3. VERIFICAR REPOSITORIOS
+      # ============================================================
       - name: Verify repositories
         shell: bash
         run: |
@@ -51,16 +54,20 @@ jobs:
 
           echo "Main repository:"
           pwd
+
           test -d app
 
           echo
           echo "WoWee repository:"
+
           test -d wowee
+          test -d wowee/include
+          test -d wowee/src
 
           echo "WoWee checkout OK."
 
       # ============================================================
-      # 3. JAVA 17
+      # 4. JAVA 17
       # ============================================================
       - name: Setup JDK
         uses: actions/setup-java@v4
@@ -69,7 +76,7 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
 
       # ============================================================
-      # 4. ANDROID SDK
+      # 5. ANDROID SDK
       # ============================================================
       - name: Configure Android SDK
         shell: bash
@@ -107,12 +114,16 @@ jobs:
             "ndk;${ANDROID_NDK_VERSION}"
 
       # ============================================================
-      # 5. VERIFICAR TOOLCHAIN
+      # 6. VERIFICAR TOOLCHAIN
       # ============================================================
       - name: Verify Android toolchain
         shell: bash
         run: |
           set -e
+
+          echo "=============================================="
+          echo "ANDROID TOOLCHAIN"
+          echo "=============================================="
 
           echo "ANDROID_HOME=$ANDROID_HOME"
 
@@ -129,8 +140,14 @@ jobs:
           echo "ADB:"
           "${ANDROID_HOME}/platform-tools/adb" version
 
+          echo
+          echo "NDK:"
+          test -f "${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}/source.properties"
+
+          cat "${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}/source.properties"
+
       # ============================================================
-      # 6. SDL3
+      # 7. SDL3
       # ============================================================
       - name: Checkout SDL3
         uses: actions/checkout@v4
@@ -140,7 +157,7 @@ jobs:
           fetch-depth: 1
 
       # ============================================================
-      # 7. GLM
+      # 8. GLM
       # ============================================================
       - name: Checkout GLM
         uses: actions/checkout@v4
@@ -150,24 +167,38 @@ jobs:
           fetch-depth: 1
 
       # ============================================================
-      # 8. OPENSSL
+      # 9. OPENSSL
       # ============================================================
       - name: Extract OpenSSL
         shell: bash
         run: |
           set -e
 
+          echo "=============================================="
+          echo "OPENSSL"
+          echo "=============================================="
+
           test -f openssl.zip
 
           rm -rf openssl-android
+
           mkdir -p openssl-android
 
           unzip -q openssl.zip -d openssl-android
 
           echo "OpenSSL extracted."
 
+          find openssl-android \
+            -maxdepth 4 \
+            -type f \
+            | head -100
+
       # ============================================================
-      # 9. VERIFICAR SOLO LOS FUENTES DE WOWEE QUE NUESTRO CMAKE USA
+      # 10. VERIFICAR FUENTES DE WOWEE
+      #
+      # NO usamos wowee/CMakeLists.txt.
+      # app/src/main/CMakeLists.txt selecciona directamente
+      # los archivos que necesitamos.
       # ============================================================
       - name: Verify WoWee sources
         shell: bash
@@ -239,9 +270,10 @@ jobs:
           echo
           echo "Todos los fuentes seleccionados por nuestro CMake existen."
           echo "No se utiliza wowee/CMakeLists.txt."
+          echo "WoWee OK."
 
       # ============================================================
-      # 10. COMPROBAR CMAKE DEL CLIENTE
+      # 11. VERIFICAR CMAKE DEL CLIENTE
       # ============================================================
       - name: Verify Android CMake
         shell: bash
@@ -250,24 +282,28 @@ jobs:
 
           CMAKE_FILE="app/src/main/CMakeLists.txt"
 
-          if [ ! -f "$CMAKE_FILE" ]; then
-            echo "ERROR: no existe $CMAKE_FILE"
-            exit 1
-          fi
-
           echo "=============================================="
           echo "ANDROID CMAKE"
           echo "=============================================="
+
+          test -f "$CMAKE_FILE"
+
+          echo "CMake encontrado:"
+          echo "$CMAKE_FILE"
 
           grep -q 'wowee/src/auth/auth_handler.cpp' "$CMAKE_FILE"
           grep -q 'wowee/src/network/world_socket.cpp' "$CMAKE_FILE"
           grep -q 'wowee/src/core/application.cpp' "$CMAKE_FILE"
           grep -q 'wowee/src/rendering/renderer.cpp' "$CMAKE_FILE"
 
-          echo "CMake del cliente encontrado y contiene WoWee."
+          echo
+          echo "CMake contiene los componentes WoWee requeridos."
 
       # ============================================================
-      # 11. NO MODIFICAR WOW_INTEGRATION.CPP
+      # 12. VALIDAR WOW_INTEGRATION.CPP
+      #
+      # IMPORTANTE:
+      # No hacemos sed ni modificaciones automáticas.
       # ============================================================
       - name: Validate WoW integration
         shell: bash
@@ -276,9 +312,11 @@ jobs:
 
           FILE="app/src/main/wow_integration.cpp"
 
-          test -f "$FILE"
+          echo "=============================================="
+          echo "WOW INTEGRATION"
+          echo "=============================================="
 
-          echo "Validando $FILE"
+          test -f "$FILE"
 
           if grep -q 'g_WoWwowee' "$FILE"; then
             echo "ERROR: g_WoWwowee encontrado."
@@ -298,20 +336,35 @@ jobs:
           echo "wow_integration.cpp OK."
 
       # ============================================================
-      # 12. GRADLE
+      # 13. PREPARAR GRADLE
+      #
+      # NO usamos gradle/actions/setup-gradle@v4 porque intenta
+      # validar los Gradle Wrapper JAR de SDL3 y WoWee.
       # ============================================================
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - name: Prepare Gradle
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "GRADLE"
+          echo "=============================================="
+
+          chmod +x gradlew
+
+          ./gradlew --version
 
       # ============================================================
-      # 13. LIMPIEZA
+      # 14. LIMPIEZA
       # ============================================================
       - name: Clean native build
         shell: bash
         run: |
           set -e
 
-          chmod +x gradlew
+          echo "=============================================="
+          echo "CLEAN"
+          echo "=============================================="
 
           rm -rf app/.cxx
           rm -rf app/build
@@ -319,27 +372,28 @@ jobs:
           ./gradlew clean --no-daemon
 
       # ============================================================
-      # 14. MOSTRAR CONFIGURACION DE GRADLE/CMAKE
+      # 15. MOSTRAR CMAKE
       # ============================================================
-      - name: Show Android build configuration
+      - name: Show build configuration
         shell: bash
         run: |
           set -e
 
           echo "=============================================="
-          echo "BUILD CONFIGURATION"
+          echo "app/build.gradle"
           echo "=============================================="
 
-          echo
-          echo "app/build.gradle:"
-          sed -n '1,320p' app/build.gradle
+          sed -n '1,360p' app/build.gradle
 
           echo
-          echo "app/src/main/CMakeLists.txt:"
-          sed -n '1,360p' app/src/main/CMakeLists.txt
+          echo "=============================================="
+          echo "app/src/main/CMakeLists.txt"
+          echo "=============================================="
+
+          sed -n '1,420p' app/src/main/CMakeLists.txt
 
       # ============================================================
-      # 15. COMPILAR
+      # 16. COMPILAR APK
       # ============================================================
       - name: Build APK
         shell: bash
@@ -357,7 +411,7 @@ jobs:
             --info
 
       # ============================================================
-      # 16. BUSCAR APK
+      # 17. LOCALIZAR APK
       # ============================================================
       - name: Find APK
         shell: bash
@@ -388,7 +442,7 @@ jobs:
           echo "$APK"
 
       # ============================================================
-      # 17. SUBIR APK
+      # 18. SUBIR APK
       # ============================================================
       - name: Upload APK
         uses: actions/upload-artifact@v4
