@@ -1,66 +1,85 @@
-name: Build WoW Mobile Client
+name: Build WoW Mobile
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
-
-  workflow_dispatch:
+      - master
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
-
-      - name: Checkout
+      - name: Checkout WoW Mobile
         uses: actions/checkout@v4
+
+      - name: Checkout WoWee
+        uses: actions/checkout@v4
+        with:
+          repository: Kelsidavis/WoWee
+          path: wowee
+          submodules: recursive
+          fetch-depth: 0
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v4
-        with:
-          packages: 'platform-tools'
+        uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK components
+      - name: Install Android SDK / NDK / CMake
         run: |
-          yes | sdkmanager --licenses
-          sdkmanager "platforms;android-35"
-          sdkmanager "build-tools;35.0.0"
-          sdkmanager "cmake;3.31.6"
-          sdkmanager "ndk;27.2.12479018"
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "cmake;3.31.6" \
+            "ndk;28.2.13676358"
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-
-      - name: Show project files
+      - name: Show Android toolchain
         run: |
-          echo "=== ROOT ==="
-          ls -la
-          echo "=== APP ==="
-          ls -la app
-          echo "=== MAIN ==="
-          find app/src/main -maxdepth 3 -type f -print
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls -la "$ANDROID_HOME/ndk"
+          ls -la "$ANDROID_HOME/cmake"
+
+      - name: Prepare WoWee dependencies
+        working-directory: wowee
+        run: |
+          git submodule update --init --recursive
+
+      - name: Check WoWee source
+        run: |
+          echo "WoWee:"
+          find wowee/src -maxdepth 2 -type f | head -100
+
+          echo "WoWee CMake:"
+          test -f wowee/CMakeLists.txt
+
+      - name: Make Gradle executable
+        run: |
+          chmod +x ./gradlew
+
+      - name: Clean
+        run: |
+          ./gradlew clean --no-daemon
 
       - name: Build Debug APK
         run: |
-          gradle --version
-          gradle --no-daemon assembleDebug
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace
 
-      - name: Verify APK
+      - name: Show APK
         run: |
-          ls -lh app/build/outputs/apk/debug/
-          file app/build/outputs/apk/debug/app-debug.apk
+          find app/build/outputs/apk -type f -maxdepth 5 -print
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: WoW-Mobile-Client
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: wowmobile-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
