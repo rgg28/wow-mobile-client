@@ -1,0 +1,163 @@
+name: Build WoW Mobile
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      # ============================================================
+      # 1. Nuestro proyecto
+      # ============================================================
+      - name: Checkout WoW Mobile
+        uses: actions/checkout@v4
+
+      # ============================================================
+      # 2. WoWee + TODOS sus submódulos
+      # ============================================================
+      - name: Checkout WoWee
+        uses: actions/checkout@v4
+        with:
+          repository: Kelsidavis/WoWee
+          path: wowee
+          submodules: recursive
+          fetch-depth: 0
+
+      # ============================================================
+      # 3. Java 17
+      # ============================================================
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # ============================================================
+      # 4. Configurar Gradle
+      # ============================================================
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      # ============================================================
+      # 5. Localizar Android SDK
+      # ============================================================
+      - name: Configure Android SDK
+        shell: bash
+        run: |
+          if [ -d "$ANDROID_HOME/cmdline-tools/latest/bin" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          elif [ -d "$ANDROID_HOME/cmdline-tools/16.0/bin" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"
+          else
+            SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -1)
+          fi
+          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+
+      # ============================================================
+      # 6. Aceptar licencias
+      # ============================================================
+      - name: Accept Android licenses
+        shell: bash
+        run: yes | "$SDKMANAGER" --licenses >/dev/null || true
+
+      # ============================================================
+      # 7. Instalar herramientas Android
+      # ============================================================
+      - name: Install Android toolchain
+        shell: bash
+        run: |
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "cmake;3.31.6" \
+            "ndk;28.2.13676358"
+
+      # ============================================================
+      # 8. Verificar toolchain
+      # ============================================================
+      - name: Verify Android toolchain
+        shell: bash
+        run: |
+          test -d "$ANDROID_HOME/ndk/28.2.13676358"
+          test -d "$ANDROID_HOME/cmake/3.31.6"
+
+      # ============================================================
+      # 9. Preparar WoWee
+      # ============================================================
+      - name: Prepare WoWee
+        working-directory: wowee
+        shell: bash
+        run: git submodule update --init --recursive
+
+      # ============================================================
+      # 10. Clonar la biblioteca oficial de SDL3
+      # ============================================================
+      - name: Checkout SDL3 official
+        uses: actions/checkout@v4
+        with:
+          repository: libsdl-org/SDL
+          ref: main
+          path: sdl3
+
+      # ============================================================
+      # 11. Instalar OpenSSL local (arm64-v8a v4.0.3)
+      # ============================================================
+      - name: Unzip Local OpenSSL
+        shell: bash
+        run: |
+          mkdir -p ${{ github.workspace }}/openssl-android
+          unzip -q "./openssl.zip" -d ${{ github.workspace }}/openssl-android
+
+      # ============================================================
+      # 12. Limpiar caché previa
+      # ============================================================
+      - name: Clean Cache
+        shell: bash
+        run: gradle clean --no-daemon --stacktrace
+
+      # ============================================================
+      # 13. Purgar Entry redundante, Parchear dependencias y Compilar
+      # ============================================================
+      - name: Build Debug APK
+        shell: bash
+        run: |
+          # Borrado del archivo obsoleto para que no cause conflictos de compilación
+          rm -f app/src/main/wow_mobile_android_entry.cpp
+
+          # Inyección de argumentos OpenSSL en Gradle
+          NEW_CMAKE_ARGS="arguments '-DANDROID_STL=c++_shared', '-DOPENSSL_ROOT_DIR=${{ github.workspace }}/openssl-android/openssl', '-DOPENSSL_INCLUDE_DIR=${{ github.workspace }}/openssl-android/openssl/include', '-DOPENSSL_CRYPTO_LIBRARY=${{ github.workspace }}/openssl-android/openssl/lib/libcrypto.a', '-DOPENSSL_SSL_LIBRARY=${{ github.workspace }}/openssl-android/openssl/lib/libssl.a', '-DOPENSSL_USE_STATIC_LIBS=TRUE'"
+          sed -i "s|arguments \"-DANDROID_STL=c++_shared\"|$NEW_CMAKE_ARGS|g" app/build.gradle
+
+          # Modificación de includes para redireccionar WoWee de SDL2 a SDL3
+          find ${{ github.workspace }}/wowee -type f \( -name "*.hpp" -o -name "*.cpp" -o -name "*.h" \) -exec sed -i 's|<SDL2/SDL.h>|<SDL3/SDL.h>|g' {} +
+          find ${{ github.workspace }}/wowee -type f \( -name "*.hpp" -o -name "*.cpp" -o -name "*.h" \) -exec sed -i 's|#include "SDL.h"|#include <SDL3/SDL.h>|g' {} +
+
+          # Compilación final
+          gradle :app:assembleDebug --no-daemon --stacktrace --info
+
+      # ============================================================
+      # 14. Buscar APK
+      # ============================================================
+      - name: Locate APK
+        shell: bash
+        run: find app/build/outputs/apk -type f -name "*.apk" -print
+
+      # ============================================================
+      # 15. Descargar APK
+      # ============================================================
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: wowmobile-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
