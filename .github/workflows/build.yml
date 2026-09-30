@@ -198,7 +198,7 @@ jobs:
 
 
       # ============================================================
-      # 13. Reemplazar SDL2 por SDL3 y Compilar
+      # 13. Secuestrar FetchContent, Forzar SDL3 y Compilar
       # ============================================================
 
       - name: Build Debug APK
@@ -210,43 +210,40 @@ jobs:
           # 2. Inyectamos los argumentos en el archivo app/build.gradle
           sed -i "s|arguments \"-DANDROID_STL=c++_shared\"|$NEW_CMAKE_ARGS|g" app/build.gradle
           
-          # 3. INTERCEPCIÓN TOTAL DE CMAKElISTS (Secuestro de dependencias nativas)
-          # Creamos un archivo de parche que compila SDL3 de forma forzada al principio del pipeline
-          # y crea un alias falso para que cuando el proyecto pida "SDL2", use "SDL3-shared".
+          # 3. CONSTRUCCIÓN DE PARCHE LIMPIO EN CMAKElISTS
+          # Compilamos SDL3 al principio de la cadena nativa e inyectamos los flags globales
           cat << 'EOF' > temp_patch.txt
-          # Forzar compilación de SDL3 desde Actions
+          # Forzar compilación e inclusión de SDL3 oficial
           add_subdirectory("/home/runner/work/wow-mobile-client/wow-mobile-client/sdl3" sdl3_build)
-          include_directories("/home/runner/work/wow-mobile-client/wow-mobile-client/sdl3/include")
+          include_directories("/home/runner/work/work-mobile-client/wow-mobile-client/sdl3/include")
           
-          # Engañar al sistema para saltarse FetchContent de SDL2
+          # Bloquear de forma mandatoria la descarga interna de SDL2 por FetchContent
           set(sdl2_POPULATED TRUE CACHE BOOL "Forced bypass of SDL2" FORCE)
           set(SDL2_POPULATED TRUE CACHE BOOL "Forced bypass of SDL2" FORCE)
-          
-          # Crear targets ficticios para que los enlaces a SDL2 apunten a SDL3
-          if(NOT TARGET SDL2)
-              add_library(SDL2 INTERFACE)
-              target_link_libraries(SDL2 INTERFACE SDL3-shared)
-          endif()
           EOF
           
-          # Unimos nuestro secuestro de librerías al principio del CMakeLists.txt del módulo nativo
+          # Combinamos con el archivo original de la app
           cat app/src/main/CMakeLists.txt >> temp_patch.txt
           mv temp_patch.txt app/src/main/CMakeLists.txt
           
-          # 4. Inyectamos la inclusión global de OpenSSL al final para evitar errores estructurales
+          # 4. Forzamos que las cabeceras de OpenSSL se lean globalmente al final del archivo
           echo "include_directories(\"${{ github.workspace }}/openssl-android/openssl/include\")" >> app/src/main/CMakeLists.txt
           
-          # 5. PARCHE DE ENCABEZADOS DE C++ (Refactor de llamadas internas)
-          # Buscamos en el motor descargado cualquier rastro de directivas <SDL2/...> o <SDL.h> 
-          # y las actualizamos a <SDL3/...> para que Clang procese el SDK moderno.
+          # 5. VINCULACIÓN AL BLANCO PRINCIPAL (El truco maestro)
+          # El script del juego buscará enlazar a un target llamado SDL2. Como evitamos que se cree,
+          # le decimos a CMake que vincule el ejecutable 'wowmobile' directamente a 'SDL3-shared'.
+          echo "target_link_libraries(wowmobile PRIVATE SDL3-shared)" >> app/src/main/CMakeLists.txt
+          
+          # 6. PARCHE DE REFACTOR DE C++ (De SDL2 a SDL3)
+          # Reescribimos de forma masiva los includes del código para consumir la API moderna
           find ${{ github.workspace }}/wowee -type f \( -name "*.hpp" -o -name "*.cpp" -o -name "*.h" \) -exec sed -i 's|<SDL2/SDL.h>|<SDL3/SDL.h>|g' {} +
           find ${{ github.workspace }}/wowee -type f \( -name "*.hpp" -o -name "*.cpp" -o -name "*.h" \) -exec sed -i 's|#include "SDL.h"|#include <SDL3/SDL.h>|g' {} +
           
-          # 6. Verificación de los parches aplicados en el log del workflow
+          # 7. Verificación visual rápida en consola
           echo "=== Encabezado superior de CMakeLists modificado ==="
-          head -n 20 app/src/main/CMakeLists.txt
+          head -n 25 app/src/main/CMakeLists.txt
           
-          # 7. Compilación
+          # 8. Compilación final
           gradle :app:assembleDebug \
             --no-daemon \
             --stacktrace \
