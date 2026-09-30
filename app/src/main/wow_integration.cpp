@@ -4,7 +4,7 @@
 #include <memory>
 #include <string>
 
-// --- INCLUSIONES DEL NÚCLEO EXTRAÍDO DE WOWEE ---
+// --- INCLUSIONES DE CABECERAS GLOBALES DEL MOTOR ---
 #include "core/application.hpp"
 #include "network/world_socket.hpp"
 #include "auth/auth_handler.hpp"
@@ -13,11 +13,10 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-// Instancias globales aisladas para el renderizado y la red de WoWee
-std::unique_ptr<WoWee::Application> g_WoWApplication = nullptr;
-std::unique_ptr<WoWee::WorldSocket>   g_WoWWorldSocket = nullptr;
+// Instancias globales directas sin envoltorios de namespaces
+std::unique_ptr<Application> g_WoWApplication = nullptr;
+std::unique_ptr<WorldSocket> g_WoWWorldSocket = nullptr;
 
-// Helpers locales para conversión de cadenas JNI
 static std::string integrationJstringToString(JNIEnv* env, jstring value) {
     if (env == nullptr || value == nullptr) return {};
     const char* chars = env->GetStringUTFChars(value, nullptr);
@@ -29,9 +28,7 @@ static std::string integrationJstringToString(JNIEnv* env, jstring value) {
 
 extern "C" {
 
-// ============================================================
-// 1. CONTROL GRÁFICO (Inicialización de Vulkan + ImGui)
-// ============================================================
+// Inicialización de la pantalla gráfica (Vulkan + ImGui nativo)
 JNIEXPORT void JNICALL
 Java_com_wowmobile_client_MainActivity_initWoWEngine(JNIEnv* env, jobject thiz, jobject surface) {
     if (surface == nullptr) {
@@ -45,15 +42,12 @@ Java_com_wowmobile_client_MainActivity_initWoWEngine(JNIEnv* env, jobject thiz, 
         return;
     }
 
-    LOGI("Levantando el motor gráfico nativo de WoWee sobre Vulkan...");
-    g_WoWApplication = std::make_unique<WoWee::Application>();
+    LOGI("Levantando el motor gráfico nativo sobre Vulkan...");
+    g_WoWApplication = std::make_unique<Application>();
     g_WoWApplication->Initialize(nativeWindow);
-    LOGI("Motor de renderizado Vulkan/ImGui listo.");
 }
 
-// ============================================================
-// 2. REFRESCO DE FRAME (Llamado a 60 FPS desde Java/Kotlin)
-// ============================================================
+// Bucle de renderizado asíncrono
 JNIEXPORT void JNICALL
 Java_com_wowmobile_client_MainActivity_renderFrame(JNIEnv* env, jobject thiz) {
     if (g_WoWApplication) {
@@ -61,25 +55,23 @@ Java_com_wowmobile_client_MainActivity_renderFrame(JNIEnv* env, jobject thiz) {
     }
 }
 
-// ============================================================
-// 3. SISTEMA DE RED (Conexión asíncrona y handshake SRP6)
-// ============================================================
+// Socket de red TCP binario y Handshake de autenticación SRP6
 JNIEXPORT void JNICALL
 Java_com_wowmobile_client_MainActivity_connectToServer(JNIEnv* env, jobject thiz, jstring host, jint port, jstring user, jstring pass) {
     std::string c_host = integrationJstringToString(env, host);
     std::string c_user = integrationJstringToString(env, user);
     std::string c_pass = integrationJstringToString(env, pass);
 
-    LOGI("Conectando de forma directa al reino: %s:%d", c_host.c_str(), port);
-    g_WoWWorldSocket = std::make_unique<WoWee::WorldSocket>();
+    LOGI("Abriendo conexión asíncrona por socket hacia %s:%d", c_host.c_str(), port);
+    g_WoWWorldSocket = std::make_unique<WorldSocket>();
 
     if (!g_WoWWorldSocket->Connect(c_host, port)) {
-        LOGE("Error de red: No se pudo abrir el socket TCP.");
+        LOGE("Error de red: El servidor rechazó la conexión TCP.");
         return;
     }
 
-    LOGI("Conexión establecida. Iniciando protocolo de autenticación con el servidor...");
-    WoWee::AuthHandler auth(g_WoWWorldSocket.get());
+    LOGI("Conectado con éxito. Iniciando AuthHandler con criptografía OpenSSL...");
+    AuthHandler auth(g_WoWWorldSocket.get());
     auth.StartAuthentication(c_user, c_pass);
 }
 
