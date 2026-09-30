@@ -126,23 +126,33 @@ jobs:
         run: gradle clean --no-daemon --stacktrace
 
       # ============================================================
-      # 13. Purgar Entry redundante, Parchear dependencias y Compilar
+      # 13. Purgar Entry redundante, Forzar Mapeo Absoluto de GLM y Compilar
       # ============================================================
       - name: Build Debug APK
         shell: bash
         run: |
-          # Borrado del archivo obsoleto para que no cause conflictos de compilación
           rm -f app/src/main/wow_mobile_android_entry.cpp
 
-          # Inyección de argumentos OpenSSL en Gradle
-          NEW_CMAKE_ARGS="arguments '-DANDROID_STL=c++_shared', '-DOPENSSL_ROOT_DIR=${{ github.workspace }}/openssl-android/openssl', '-DOPENSSL_INCLUDE_DIR=${{ github.workspace }}/openssl-android/openssl/include', '-DOPENSSL_CRYPTO_LIBRARY=${{ github.workspace }}/openssl-android/openssl/lib/libcrypto.a', '-DOPENSSL_SSL_LIBRARY=${{ github.workspace }}/openssl-android/openssl/lib/libssl.a', '-DOPENSSL_USE_STATIC_LIBS=TRUE'"
+          # Localizamos la ruta absoluta real de GLM dentro de la estructura de dependencias de WoWee
+          # (CMake la descarga dinámicamente en app/.cxx/ o en el árbol del subproyecto)
+          # Para asegurar que Clang lo lea sin importar el subproyecto, forzamos su inyección en las propiedades
+          GLM_FORCED_PATH="${{ github.workspace }}/app/.cxx/Debug/393l2226/arm64-v8a/_deps/glm-src"
+          mkdir -p "$GLM_FORCED_PATH"
+
+          # Si WoWee ya tiene una copia local descargada o en caché de submódulos, la enlazamos
+          if [ -d "${{ github.workspace }}/wowee/android/app/.cxx" ]; then
+            cp -r ${{ github.workspace }}/wowee/android/app/.cxx/* ${{ github.workspace }}/app/.cxx/ 2>/dev/null || true
+          fi
+
+          # Inyección expandida de argumentos nativos (OpenSSL estático + Ruta de GLM Absoluta)
+          NEW_CMAKE_ARGS="arguments '-DANDROID_STL=c++_shared', '-DOPENSSL_ROOT_DIR=${{ github.workspace }}/openssl-android/openssl', '-DOPENSSL_INCLUDE_DIR=${{ github.workspace }}/openssl-android/openssl/include', '-DOPENSSL_CRYPTO_LIBRARY=${{ github.workspace }}/openssl-android/openssl/lib/libcrypto.a', '-DOPENSSL_SSL_LIBRARY=${{ github.workspace }}/openssl-android/openssl/lib/libssl.a', '-DOPENSSL_USE_STATIC_LIBS=TRUE', '-DGLM_INCLUDE_DIR=$GLM_FORCED_PATH'"
           sed -i "s|arguments \"-DANDROID_STL=c++_shared\"|$NEW_CMAKE_ARGS|g" app/build.gradle
 
           # Modificación de includes para redireccionar WoWee de SDL2 a SDL3
           find ${{ github.workspace }}/wowee -type f \( -name "*.hpp" -o -name "*.cpp" -o -name "*.h" \) -exec sed -i 's|<SDL2/SDL.h>|<SDL3/SDL.h>|g' {} +
           find ${{ github.workspace }}/wowee -type f \( -name "*.hpp" -o -name "*.cpp" -o -name "*.h" \) -exec sed -i 's|#include "SDL.h"|#include <SDL3/SDL.h>|g' {} +
 
-          # Compilación final
+          # Disparamos la compilación del APK
           gradle :app:assembleDebug --no-daemon --stacktrace --info
 
       # ============================================================
