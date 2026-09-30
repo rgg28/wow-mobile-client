@@ -183,12 +183,11 @@ jobs:
       - name: Unzip Local OpenSSL
         shell: bash
         run: |
-          # Crear directorio explícito para evitar problemas de rutas relativas
           mkdir -p ${{ github.workspace }}/openssl-android
           unzip -q "./openssl.zip" -d ${{ github.workspace }}/openssl-android
           
-          echo "Contenido verificado en openssl-android:"
-          ls -la ${{ github.workspace }}/openssl-android
+          echo "Contenido verificado en el subdirectorio openssl:"
+          ls -la ${{ github.workspace }}/openssl-android/openssl
 
 
       # ============================================================
@@ -204,7 +203,7 @@ jobs:
 
 
       # ============================================================
-      # 13. Compilar (Inyectando variables de entorno y argumentos CMake)
+      # 13. Compilar (Rutas corregidas incluyendo /openssl)
       # ============================================================
 
       - name: Build Debug APK
@@ -215,14 +214,14 @@ jobs:
             --stacktrace \
             --info
         env:
-          # Rutas estándar del sistema para tareas de enlace
-          OPENSSL_ROOT_DIR: ${{ github.workspace }}/openssl-android
-          OPENSSL_INCLUDE_DIR: ${{ github.workspace }}/openssl-android/include
-          OPENSSL_CRYPTO_LIBRARY: ${{ github.workspace }}/openssl-android/lib/libcrypto.a
-          OPENSSL_SSL_LIBRARY: ${{ github.workspace }}/openssl-android/lib/libssl.a
+          # Se añade la subcarpeta /openssl mapeada desde la extracción real en disco
+          OPENSSL_ROOT_DIR: ${{ github.workspace }}/openssl-android/openssl
+          OPENSSL_INCLUDE_DIR: ${{ github.workspace }}/openssl-android/openssl/include
+          OPENSSL_CRYPTO_LIBRARY: ${{ github.workspace }}/openssl-android/openssl/lib/libcrypto.a
+          OPENSSL_SSL_LIBRARY: ${{ github.workspace }}/openssl-android/openssl/lib/libssl.a
           
-          # Forzar inyección de parámetros nativos directamente en la ejecución de CMake
-          CMAKE_ARGS: "-DOPENSSL_ROOT_DIR=${{ github.workspace }}/openssl-android -DOPENSSL_INCLUDE_DIR=${{ github.workspace }}/openssl-android/include -DOPENSSL_USE_STATIC_LIBS=TRUE"
+          # Argumento de inyección explícita para la fase de configuración de CMake
+          CMAKE_ARGS: "-DOPENSSL_ROOT_DIR=${{ github.workspace }}/openssl-android/openssl -DOPENSSL_INCLUDE_DIR=${{ github.workspace }}/openssl-android/openssl/include -DOPENSSL_USE_STATIC_LIBS=TRUE"
 
 
       # ============================================================
