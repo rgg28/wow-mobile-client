@@ -24,6 +24,7 @@ import androidx.documentfile.provider.DocumentFile;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.util.Locale; // <--- CORREGIDO: Importación añadida
 
 public class MainActivity extends Activity {
 
@@ -158,20 +159,17 @@ public class MainActivity extends Activity {
             getContentResolver().takePersistableUriPermission(wowTreeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
             wowRoot = DocumentFile.fromTreeUri(this, wowTreeUri);
             
-            // Leemos de forma automática el realmlist.wtf del almacenamiento local
             String parsedHost = readRealmlistWtf();
             showLoginScreen(parsedHost);
         }
     }
 
     private String readRealmlistWtf() {
-        String host = "127.0.0.1"; // IP por defecto de fallback
+        String host = "127.0.0.1";
         if (wowRoot == null) return host;
 
-        // Buscamos el archivo realmlist.wtf dentro de la estructura raíz seleccionada
         DocumentFile realmlistFile = wowRoot.findFile("realmlist.wtf");
         if (realmlistFile == null) {
-            // Caso alternativo: Buscar dentro de la subcarpeta de localización estándar Data/esES/ o Data/enUS/
             DocumentFile dataDir = wowRoot.findFile("Data");
             if (dataDir != null) {
                 for (DocumentFile subDir : dataDir.listFiles()) {
@@ -192,7 +190,7 @@ public class MainActivity extends Activity {
                     if (line.toLowerCase(Locale.ROOT).startsWith("set realmlist")) {
                         String[] tokens = line.split("\\s+");
                         if (tokens.length >= 3) {
-                            host = tokens[2]; // Capturamos el dominio o la IP del reino nativo
+                            host = tokens[2];
                             break;
                         }
                     }
@@ -207,7 +205,7 @@ public class MainActivity extends Activity {
         loginLayout.addView(title("INICIAR SESIÓN", 24));
         
         final EditText editHost = edit("Servidor (Realmlist)", false);
-        editHost.setText(defaultHost); // Inyectamos el host procesado de realmlist.wtf
+        editHost.setText(defaultHost);
         final EditText editUser = edit("Nombre de Cuenta", false);
         final EditText editPass = edit("Contraseña", true);
 
@@ -234,7 +232,8 @@ public class MainActivity extends Activity {
         surfaceView.getHolder().addCallback(new SurfaceHolder.Callback() {
             @Override
             public void surfaceCreated(SurfaceHolder holder) {
-                initWoWEngine(holder.surface);
+                // CORREGIDO: Usando holder.getSurface() nativo de Android
+                initWoWEngine(holder.getSurface()); 
                 new Thread(() -> connectToServer(host, 3724, user, pass)).start();
                 new Thread(() -> {
                     while (!isFinishing()) {
@@ -251,7 +250,6 @@ public class MainActivity extends Activity {
         setContentView(surfaceView);
     }
 
-    // Callback para que tu código C++ use el sistema de VFS e inspeccione carpetas
     public String vfsList(String path) {
         if (wowRoot == null) return "";
         DocumentFile target = wowRoot;
