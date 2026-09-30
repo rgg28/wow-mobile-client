@@ -12,10 +12,14 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../wowee/include          # WoWee includes
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../wowee/extern/imgui     # ImGui de WoWee
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../wowee/extern/vk-bootstrap/src
-    
-    # CORREGIDO: Mapeo de la ruta de FetchContent de CMake para que tus archivos encuentren GLM
-    ${CMAKE_CURRENT_BINARY_DIR}/_deps/glm-src
 )
+
+# Inyección forzada de la ruta absoluta de GLM enviada por Actions
+if(GLM_INCLUDE_DIR)
+    include_directories(${GLM_INCLUDE_DIR})
+else()
+    include_directories(${CMAKE_CURRENT_BINARY_DIR}/_deps/glm-src)
+endif()
 
 if(OPENSSL_INCLUDE_DIR)
     include_directories(${OPENSSL_INCLUDE_DIR})
@@ -31,7 +35,6 @@ include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../../../sdl3/include")
 # 3. Definición del Target (Tus Fuentes + Módulos de WoWee)
 # ============================================================
 add_library(wowmobile SHARED
-    # Compilación paralela de tus dos archivos locales en main
     wow_engine.cpp
     wow_integration.cpp
 
