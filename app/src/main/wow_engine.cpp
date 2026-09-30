@@ -1,10 +1,10 @@
 #include <jni.h>
 #include <android/log.h>
 
+#include <algorithm>
 #include <atomic>
-#include <cmath>
+#include <cctype>
 #include <cstdint>
-#include <cstdio>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -20,7 +20,7 @@
 
 
 // ============================================================
-// ESTADO GLOBAL DEL MOTOR
+// ESTADO GLOBAL
 // ============================================================
 
 static JavaVM* g_vm = nullptr;
@@ -37,17 +37,9 @@ static std::atomic<bool> g_running(false);
 
 static std::atomic<bool> g_connected(false);
 
-static std::string g_selectedCharacter;
-
-static float g_joystickX = 0.0f;
-static float g_joystickY = 0.0f;
-
-static bool g_modL1Activo = false;
-static bool g_modR1Activo = false;
-
 
 // ============================================================
-// JNI / ENV
+// JNI
 // ============================================================
 
 static JNIEnv* getJNIEnv(
@@ -75,10 +67,12 @@ static JNIEnv* getJNIEnv(
         return nullptr;
     }
 
-    if (g_vm->AttachCurrentThread(
-            &env,
-            nullptr
-    ) != JNI_OK) {
+    if (
+            g_vm->AttachCurrentThread(
+                    &env,
+                    nullptr
+            ) != JNI_OK
+    ) {
         return nullptr;
     }
 
@@ -90,21 +84,21 @@ static JNIEnv* getJNIEnv(
 static void releaseJNIEnv(
         bool attached
 ) {
-    if (attached && g_vm != nullptr) {
+    if (
+            attached &&
+            g_vm != nullptr
+    ) {
         g_vm->DetachCurrentThread();
     }
 }
 
-
-// ============================================================
-// OBTENER CLASE DE LA ACTIVIDAD
-// ============================================================
-
 static jclass getActivityClass(
         JNIEnv* env
 ) {
-    if (env == nullptr ||
-        g_activity == nullptr) {
+    if (
+            env == nullptr ||
+            g_activity == nullptr
+    ) {
         return nullptr;
     }
 
@@ -115,7 +109,7 @@ static jclass getActivityClass(
 
 
 // ============================================================
-// LLAMADA JAVA: vfsExists()
+// VFS: EXISTE
 // ============================================================
 
 static bool vfsExists(
@@ -146,8 +140,13 @@ static bool vfsExists(
             );
 
     if (method == nullptr) {
-        env->DeleteLocalRef(clazz);
+
+        env->DeleteLocalRef(
+                clazz
+        );
+
         releaseJNIEnv(attached);
+
         return false;
     }
 
@@ -156,24 +155,29 @@ static bool vfsExists(
                     path.c_str()
             );
 
-    jboolean result =
+    jboolean value =
             env->CallBooleanMethod(
                     g_activity,
                     method,
                     jpath
             );
 
-    env->DeleteLocalRef(jpath);
-    env->DeleteLocalRef(clazz);
+    env->DeleteLocalRef(
+            jpath
+    );
+
+    env->DeleteLocalRef(
+            clazz
+    );
 
     releaseJNIEnv(attached);
 
-    return result == JNI_TRUE;
+    return value == JNI_TRUE;
 }
 
 
 // ============================================================
-// LLAMADA JAVA: vfsIsDirectory()
+// VFS: DIRECTORIO
 // ============================================================
 
 static bool vfsIsDirectory(
@@ -204,8 +208,13 @@ static bool vfsIsDirectory(
             );
 
     if (method == nullptr) {
-        env->DeleteLocalRef(clazz);
+
+        env->DeleteLocalRef(
+                clazz
+        );
+
         releaseJNIEnv(attached);
+
         return false;
     }
 
@@ -214,24 +223,29 @@ static bool vfsIsDirectory(
                     path.c_str()
             );
 
-    jboolean result =
+    jboolean value =
             env->CallBooleanMethod(
                     g_activity,
                     method,
                     jpath
             );
 
-    env->DeleteLocalRef(jpath);
-    env->DeleteLocalRef(clazz);
+    env->DeleteLocalRef(
+            jpath
+    );
+
+    env->DeleteLocalRef(
+            clazz
+    );
 
     releaseJNIEnv(attached);
 
-    return result == JNI_TRUE;
+    return value == JNI_TRUE;
 }
 
 
 // ============================================================
-// LLAMADA JAVA: vfsList()
+// VFS: LISTAR
 // ============================================================
 
 static std::vector<std::string> vfsList(
@@ -264,8 +278,13 @@ static std::vector<std::string> vfsList(
             );
 
     if (method == nullptr) {
-        env->DeleteLocalRef(clazz);
+
+        env->DeleteLocalRef(
+                clazz
+        );
+
         releaseJNIEnv(attached);
+
         return result;
     }
 
@@ -281,11 +300,18 @@ static std::vector<std::string> vfsList(
                     jpath
             );
 
-    env->DeleteLocalRef(jpath);
+    env->DeleteLocalRef(
+            jpath
+    );
 
     if (listObject == nullptr) {
-        env->DeleteLocalRef(clazz);
+
+        env->DeleteLocalRef(
+                clazz
+        );
+
         releaseJNIEnv(attached);
+
         return result;
     }
 
@@ -295,9 +321,17 @@ static std::vector<std::string> vfsList(
             );
 
     if (listClass == nullptr) {
-        env->DeleteLocalRef(listObject);
-        env->DeleteLocalRef(clazz);
+
+        env->DeleteLocalRef(
+                listObject
+        );
+
+        env->DeleteLocalRef(
+                clazz
+        );
+
         releaseJNIEnv(attached);
+
         return result;
     }
 
@@ -315,12 +349,22 @@ static std::vector<std::string> vfsList(
                     "(I)Ljava/lang/Object;"
             );
 
-    if (sizeMethod == nullptr ||
-        getMethod == nullptr) {
+    if (
+            sizeMethod == nullptr ||
+            getMethod == nullptr
+    ) {
 
-        env->DeleteLocalRef(listClass);
-        env->DeleteLocalRef(listObject);
-        env->DeleteLocalRef(clazz);
+        env->DeleteLocalRef(
+                listClass
+        );
+
+        env->DeleteLocalRef(
+                listObject
+        );
+
+        env->DeleteLocalRef(
+                clazz
+        );
 
         releaseJNIEnv(attached);
 
@@ -333,7 +377,11 @@ static std::vector<std::string> vfsList(
                     sizeMethod
             );
 
-    for (jint i = 0; i < size; ++i) {
+    for (
+            jint i = 0;
+            i < size;
+            ++i
+    ) {
 
         jobject item =
                 env->CallObjectMethod(
@@ -347,7 +395,9 @@ static std::vector<std::string> vfsList(
         }
 
         jstring stringItem =
-                static_cast<jstring>(item);
+                static_cast<jstring>(
+                        item
+                );
 
         const char* chars =
                 env->GetStringUTFChars(
@@ -356,7 +406,10 @@ static std::vector<std::string> vfsList(
                 );
 
         if (chars != nullptr) {
-            result.emplace_back(chars);
+
+            result.emplace_back(
+                    chars
+            );
 
             env->ReleaseStringUTFChars(
                     stringItem,
@@ -364,12 +417,22 @@ static std::vector<std::string> vfsList(
             );
         }
 
-        env->DeleteLocalRef(item);
+        env->DeleteLocalRef(
+                item
+        );
     }
 
-    env->DeleteLocalRef(listClass);
-    env->DeleteLocalRef(listObject);
-    env->DeleteLocalRef(clazz);
+    env->DeleteLocalRef(
+            listClass
+    );
+
+    env->DeleteLocalRef(
+            listObject
+    );
+
+    env->DeleteLocalRef(
+            clazz
+    );
 
     releaseJNIEnv(attached);
 
@@ -378,7 +441,7 @@ static std::vector<std::string> vfsList(
 
 
 // ============================================================
-// LLAMADA JAVA: vfsReadFile()
+// VFS: LEER ARCHIVO
 // ============================================================
 
 static std::vector<uint8_t> vfsReadFile(
@@ -411,8 +474,13 @@ static std::vector<uint8_t> vfsReadFile(
             );
 
     if (method == nullptr) {
-        env->DeleteLocalRef(clazz);
+
+        env->DeleteLocalRef(
+                clazz
+        );
+
         releaseJNIEnv(attached);
+
         return result;
     }
 
@@ -430,20 +498,32 @@ static std::vector<uint8_t> vfsReadFile(
                     )
             );
 
-    env->DeleteLocalRef(jpath);
+    env->DeleteLocalRef(
+            jpath
+    );
 
     if (data == nullptr) {
-        env->DeleteLocalRef(clazz);
+
+        env->DeleteLocalRef(
+                clazz
+        );
+
         releaseJNIEnv(attached);
+
         return result;
     }
 
     jsize length =
-            env->GetArrayLength(data);
+            env->GetArrayLength(
+                    data
+            );
 
     if (length > 0) {
+
         result.resize(
-                static_cast<size_t>(length)
+                static_cast<size_t>(
+                        length
+                )
         );
 
         env->GetByteArrayRegion(
@@ -456,8 +536,13 @@ static std::vector<uint8_t> vfsReadFile(
         );
     }
 
-    env->DeleteLocalRef(data);
-    env->DeleteLocalRef(clazz);
+    env->DeleteLocalRef(
+            data
+    );
+
+    env->DeleteLocalRef(
+            clazz
+    );
 
     releaseJNIEnv(attached);
 
@@ -466,309 +551,454 @@ static std::vector<uint8_t> vfsReadFile(
 
 
 // ============================================================
-// MOTOR: INICIALIZACIÓN
+// EXTENSIÓN
 // ============================================================
 
-static void engineInit() {
-    std::lock_guard<std::mutex> lock(
-            g_mutex
-    );
-
-    g_running = true;
-
-    LOGI(
-            "WoW Mobile Engine inicializado"
-    );
-}
-
-
-// ============================================================
-// MOTOR: CARPETA WOW
-// ============================================================
-
-static void engineSetWowFolder(
-        const std::string& uri
+static std::string getExtension(
+        const std::string& name
 ) {
-    std::lock_guard<std::mutex> lock(
-            g_mutex
-    );
+    size_t slash =
+            name.find_last_of(
+                    "/\\"
+            );
 
-    g_wowFolderUri = uri;
+    size_t dot =
+            name.find_last_of(
+                    '.'
+            );
 
-    LOGI(
-            "Carpeta WoW configurada: %s",
-            g_wowFolderUri.c_str()
-    );
-}
-
-
-// ============================================================
-// CONVERTIR BYTES A HEX
-// ============================================================
-
-static std::string bytesToHex(
-        const std::vector<uint8_t>& data,
-        size_t maxBytes
-) {
-    std::ostringstream stream;
-
-    size_t count =
-            data.size();
-
-    if (count > maxBytes) {
-        count = maxBytes;
+    if (
+            dot == std::string::npos ||
+            (
+                    slash != std::string::npos &&
+                    dot < slash
+            )
+    ) {
+        return "";
     }
 
-    for (size_t i = 0; i < count; ++i) {
+    std::string ext =
+            name.substr(
+                    dot + 1
+            );
 
-        char buffer[4];
+    std::transform(
+            ext.begin(),
+            ext.end(),
+            ext.begin(),
+            [](unsigned char c) {
+                return static_cast<char>(
+                        std::toupper(c)
+                );
+            }
+    );
 
-        std::snprintf(
-                buffer,
-                sizeof(buffer),
-                "%02X",
-                data[i]
-        );
+    return ext;
+}
 
-        if (i > 0) {
-            stream << ' ';
+
+// ============================================================
+// CONTADORES DEL ESCANEO
+// ============================================================
+
+struct ScanStats {
+
+    uint64_t directories = 0;
+
+    uint64_t files = 0;
+
+    uint64_t mpq = 0;
+
+    uint64_t blp = 0;
+
+    uint64_t m2 = 0;
+
+    uint64_t wmo = 0;
+
+    uint64_t adt = 0;
+
+    uint64_t wdt = 0;
+
+    uint64_t dbc = 0;
+
+    uint64_t db2 = 0;
+
+    uint64_t lua = 0;
+
+    uint64_t xml = 0;
+
+    uint64_t other = 0;
+
+    uint64_t errors = 0;
+
+    uint64_t items = 0;
+
+    bool rootReadable = false;
+};
+
+
+// ============================================================
+// ESCANEO RECURSIVO
+// ============================================================
+
+static void scanDirectory(
+        const std::string& path,
+        int depth,
+        ScanStats& stats,
+        std::ostringstream& output
+) {
+    if (
+            depth > 8 ||
+            stats.items >= 50000
+    ) {
+        return;
+    }
+
+    std::vector<std::string> items =
+            vfsList(path);
+
+    if (path.empty()) {
+        stats.rootReadable =
+                !items.empty();
+    }
+
+    for (
+            const std::string& item :
+            items
+    ) {
+
+        if (
+                stats.items >= 50000
+        ) {
+            break;
         }
 
-        stream << buffer;
-    }
+        ++stats.items;
 
-    return stream.str();
+        bool isDirectory =
+                !item.empty() &&
+                item.back() == '/';
+
+        std::string cleanName =
+                item;
+
+        if (isDirectory) {
+            cleanName.pop_back();
+        }
+
+        std::string fullPath;
+
+        if (path.empty()) {
+            fullPath =
+                    cleanName;
+        } else {
+            fullPath =
+                    path +
+                    "/" +
+                    cleanName;
+        }
+
+        if (isDirectory) {
+
+            ++stats.directories;
+
+            output
+                    << "[DIR] "
+                    << fullPath
+                    << "\n";
+
+            scanDirectory(
+                    fullPath,
+                    depth + 1,
+                    stats,
+                    output
+            );
+
+            continue;
+        }
+
+        ++stats.files;
+
+        std::string extension =
+                getExtension(
+                        cleanName
+                );
+
+        if (extension == "MPQ") {
+            ++stats.mpq;
+        } else if (
+                extension == "BLP"
+        ) {
+            ++stats.blp;
+        } else if (
+                extension == "M2"
+        ) {
+            ++stats.m2;
+        } else if (
+                extension == "WMO"
+        ) {
+            ++stats.wmo;
+        } else if (
+                extension == "ADT"
+        ) {
+            ++stats.adt;
+        } else if (
+                extension == "WDT"
+        ) {
+            ++stats.wdt;
+        } else if (
+                extension == "DBC"
+        ) {
+            ++stats.dbc;
+        } else if (
+                extension == "DB2"
+        ) {
+            ++stats.db2;
+        } else if (
+                extension == "LUA"
+        ) {
+            ++stats.lua;
+        } else if (
+                extension == "XML"
+        ) {
+            ++stats.xml;
+        } else {
+            ++stats.other;
+        }
+
+        output
+                << "[FILE] "
+                << fullPath;
+
+        if (!extension.empty()) {
+
+            output
+                    << "  [TYPE] ."
+                    << extension;
+        }
+
+        output
+                << "\n";
+    }
 }
 
 
 // ============================================================
-// PRUEBA COMPLETA DEL VFS
+// SCAN CLIENTE
 // ============================================================
 
-static std::string engineTestVfs() {
+static std::string engineScanClient() {
 
-    std::ostringstream out;
+    std::ostringstream output;
 
-    out << "=== WOW MOBILE CLIENT / VFS TEST ===\n";
-    out << "\n";
+    output
+            << "=== WOW MOBILE CLIENT SCANNER ===\n\n";
 
     if (g_wowFolderUri.empty()) {
-        out << "VFS_ERROR\n";
-        out << "[ERROR] No hay carpeta WoW configurada.\n";
-        return out.str();
+
+        output
+                << "SCAN_ERROR\n"
+                << "[ERROR] No hay una carpeta raíz configurada.\n";
+
+        return output.str();
     }
 
-    out << "[INFO] URI SAF configurada.\n";
-    out << "\n";
+    output
+            << "[INFO] Escaneando la carpeta seleccionada "
+            << "como raíz del cliente.\n";
 
+    output
+            << "[INFO] No se presupone ninguna estructura "
+            << "de carpetas.\n\n";
 
-    // --------------------------------------------------------
-    // DIRECTORIOS ESPERADOS
-    // --------------------------------------------------------
-
-    const char* directories[] = {
-            "cameras",
-            "character",
-            "creatures",
-            "Data",
-            "Interface",
-            "WTF"
-    };
-
-    int directoriesFound = 0;
-
-    out << "--- DIRECTORIOS ---\n";
-
-    for (const char* directory :
-            directories) {
-
-        bool exists =
-                vfsIsDirectory(directory);
-
-        if (exists) {
-            ++directoriesFound;
-
-            out << "[OK] Directorio: "
-                << directory
-                << "\n";
-        } else {
-            out << "[INFO] No encontrado: "
-                << directory
-                << "\n";
-        }
-    }
-
-    out << "\n";
-
+    ScanStats stats;
 
     // --------------------------------------------------------
-    // LISTADO DE RAÍZ
+    // RAÍZ
     // --------------------------------------------------------
 
-    out << "--- RAÍZ DEL CLIENTE ---\n";
-
-    std::vector<std::string> rootFiles =
+    std::vector<std::string> root =
             vfsList("");
 
-    if (rootFiles.empty()) {
+    if (root.empty()) {
 
-        out << "[ERROR] El VFS no pudo listar la raíz "
-               "o la carpeta está vacía.\n";
+        output
+                << "SCAN_ERROR\n"
+                << "[ERROR] No se pudo leer la carpeta raíz "
+                << "mediante SAF.\n";
 
-    } else {
-
-        out << "[OK] Elementos encontrados: "
-            << rootFiles.size()
-            << "\n";
-
-        const size_t maxDisplay = 80;
-
-        for (size_t i = 0;
-             i < rootFiles.size() &&
-             i < maxDisplay;
-             ++i) {
-
-            out << "  "
-                << rootFiles[i]
-                << "\n";
-        }
-
-        if (rootFiles.size() > maxDisplay) {
-            out << "  ...\n";
-        }
+        return output.str();
     }
 
-    out << "\n";
+    stats.rootReadable = true;
+
+    output
+            << "[OK] Carpeta raíz accesible.\n";
+
+    output
+            << "[INFO] Elementos inmediatos: "
+            << root.size()
+            << "\n\n";
 
 
     // --------------------------------------------------------
-    // ARCHIVOS PEQUEÑOS / IMPORTANTES
+    // ESCANEO
     // --------------------------------------------------------
 
-    const char* testFiles[] = {
-            "realmlist.wtf",
-            "Data/common.MPQ",
-            "Data/expansion.MPQ",
-            "Data/World.MPQ",
-            "Data/lichking.MPQ"
-    };
+    output
+            << "--- ESTRUCTURA DETECTADA ---\n";
 
-    int filesFound = 0;
-    int filesRead = 0;
+    scanDirectory(
+            "",
+            0,
+            stats,
+            output
+    );
 
-    out << "--- PRUEBA DE ARCHIVOS ---\n";
-
-    for (const char* file :
-            testFiles) {
-
-        bool exists =
-                vfsExists(file);
-
-        if (!exists) {
-
-            out << "[INFO] No encontrado: "
-                << file
-                << "\n";
-
-            continue;
-        }
-
-        ++filesFound;
-
-        out << "[OK] Encontrado: "
-            << file
+    output
             << "\n";
 
-        std::vector<uint8_t> data =
-                vfsReadFile(file);
 
-        if (data.empty()) {
+    // --------------------------------------------------------
+    // RESUMEN
+    // --------------------------------------------------------
 
-            out << "[INFO] Existe pero no se "
-                   "pudo leer mediante byte[].\n";
+    output
+            << "--- RESUMEN ---\n";
 
-            continue;
-        }
-
-        ++filesRead;
-
-        out << "[OK] Leído: "
-            << file
-            << " ("
-            << data.size()
-            << " bytes)\n";
-
-        out << "[INFO] Primeros bytes: "
-            << bytesToHex(data, 32)
+    output
+            << "[INFO] Directorios: "
+            << stats.directories
             << "\n";
-    }
 
-    out << "\n";
+    output
+            << "[INFO] Archivos: "
+            << stats.files
+            << "\n";
+
+    output
+            << "[INFO] Elementos procesados: "
+            << stats.items
+            << "\n";
+
+    output
+            << "\n";
+
+
+    // --------------------------------------------------------
+    // FORMATOS
+    // --------------------------------------------------------
+
+    output
+            << "--- FORMATOS WOW DETECTADOS ---\n";
+
+    output
+            << "[TYPE] MPQ : "
+            << stats.mpq
+            << "\n";
+
+    output
+            << "[TYPE] BLP : "
+            << stats.blp
+            << "\n";
+
+    output
+            << "[TYPE] M2  : "
+            << stats.m2
+            << "\n";
+
+    output
+            << "[TYPE] WMO : "
+            << stats.wmo
+            << "\n";
+
+    output
+            << "[TYPE] ADT : "
+            << stats.adt
+            << "\n";
+
+    output
+            << "[TYPE] WDT : "
+            << stats.wdt
+            << "\n";
+
+    output
+            << "[TYPE] DBC : "
+            << stats.dbc
+            << "\n";
+
+    output
+            << "[TYPE] DB2 : "
+            << stats.db2
+            << "\n";
+
+    output
+            << "[TYPE] LUA : "
+            << stats.lua
+            << "\n";
+
+    output
+            << "[TYPE] XML : "
+            << stats.xml
+            << "\n";
+
+    output
+            << "[TYPE] Otros: "
+            << stats.other
+            << "\n";
+
+    output
+            << "\n";
 
 
     // --------------------------------------------------------
     // CONCLUSIÓN
     // --------------------------------------------------------
 
-    out << "--- RESULTADO ---\n";
+    if (
+            stats.rootReadable &&
+            stats.items > 0
+    ) {
 
-    bool rootOk =
-            !rootFiles.empty();
+        output
+                << "SCAN_OK\n";
 
-    bool directoryOk =
-            directoriesFound > 0;
+        output
+                << "[OK] El cliente fue descubierto "
+                << "mediante el VFS Android.\n";
 
-    bool fileAccessOk =
-            filesFound == 0 ||
-            filesRead > 0;
-
-    if (rootOk &&
-        directoryOk &&
-        fileAccessOk) {
-
-        out << "VFS_OK\n";
-        out << "[OK] El motor nativo puede acceder "
-               "al cliente mediante el VFS Android.\n";
+        output
+                << "[OK] La aplicación no depende de "
+                << "nombres fijos de carpetas.\n";
 
     } else {
 
-        out << "VFS_ERROR\n";
+        output
+                << "SCAN_ERROR\n";
 
-        if (!rootOk) {
-            out << "[ERROR] No se pudo listar la raíz.\n";
-        }
-
-        if (!directoryOk) {
-            out << "[ERROR] No se encontraron "
-                   "directorios del cliente.\n";
-        }
-
-        if (!fileAccessOk) {
-            out << "[ERROR] Se encontraron archivos "
-                   "pero no pudieron leerse.\n";
-        }
+        output
+                << "[ERROR] No se pudo construir "
+                << "la estructura del cliente.\n";
     }
 
-    out << "\n";
+    if (
+            stats.items >= 50000
+    ) {
 
-    out << "Directorios detectados: "
-        << directoriesFound
-        << "\n";
+        output
+                << "[INFO] Se alcanzó el límite de "
+                << "50.000 elementos.\n";
+    }
 
-    out << "Archivos de prueba encontrados: "
-        << filesFound
-        << "\n";
+    output
+            << "[INFO] Profundidad máxima: 8 niveles.\n";
 
-    out << "Archivos de prueba leídos: "
-        << filesRead
-        << "\n";
-
-    return out.str();
+    return output.str();
 }
 
 
 // ============================================================
-// LOGIN - PROVISIONAL
+// LOGIN PROVISIONAL
 // ============================================================
 
 static void engineLogin(
@@ -781,42 +1011,38 @@ static void engineLogin(
         );
 
         g_username = username;
+
         g_connected = false;
     }
 
     LOGI(
-            "Solicitud de login para usuario: %s",
+            "Solicitud de login: %s",
             username.c_str()
     );
 
     /*
-     * IMPORTANTE:
+     * Todavía no se simula autenticación.
      *
-     * Este punto todavía NO implementa el protocolo
-     * real de autenticación de WoW 3.3.5a.
+     * La implementación real de WoW 3.3.5a
+     * deberá implementar:
      *
-     * No se debe fingir que el servidor aceptó
-     * usuario/contraseña.
-     *
-     * La implementación real deberá realizar:
-     *
-     *   AUTH_LOGON_CHALLENGE
-     *   AUTH_LOGON_PROOF
-     *   REALM_LIST
-     *   CMSG_AUTH_SESSION
-     *   SMSG_AUTH_RESPONSE
-     *   CMSG_CHAR_ENUM
-     *   SMSG_CHAR_ENUM
+     * AUTH_LOGON_CHALLENGE
+     * AUTH_LOGON_PROOF
+     * REALM_LIST
+     * CMSG_AUTH_SESSION
+     * SMSG_AUTH_RESPONSE
+     * CMSG_CHAR_ENUM
+     * SMSG_CHAR_ENUM
+     * CMSG_PLAYER_LOGIN
      *
      * etc.
      */
 
     LOGI(
-            "Protocolo de autenticacion WoW 3.3.5a "
-            "todavia no implementado."
+            "Protocolo WoW 3.3.5a pendiente."
     );
 
-    (void)password;
+    (void) password;
 }
 
 
@@ -829,7 +1055,7 @@ static void engineTouchDown(
         float y
 ) {
     LOGI(
-            "Touch DOWN: %.1f %.1f",
+            "Touch DOWN %.1f %.1f",
             x,
             y
     );
@@ -840,7 +1066,7 @@ static void engineTouchMove(
         float y
 ) {
     LOGI(
-            "Touch MOVE: %.1f %.1f",
+            "Touch MOVE %.1f %.1f",
             x,
             y
     );
@@ -851,7 +1077,7 @@ static void engineTouchUp(
         float y
 ) {
     LOGI(
-            "Touch UP: %.1f %.1f",
+            "Touch UP %.1f %.1f",
             x,
             y
     );
@@ -859,7 +1085,7 @@ static void engineTouchUp(
 
 
 // ============================================================
-// JNI_OnLoad
+// JNI ON LOAD
 // ============================================================
 
 JNIEXPORT jint JNICALL
@@ -878,7 +1104,7 @@ JNI_OnLoad(
 
 
 // ============================================================
-// nativeInit()
+// nativeInit
 // ============================================================
 
 extern "C"
@@ -888,6 +1114,7 @@ Java_com_wowmobile_client_MainActivity_nativeInit(
         jobject activity
 ) {
     if (g_activity != nullptr) {
+
         env->DeleteGlobalRef(
                 g_activity
         );
@@ -900,12 +1127,16 @@ Java_com_wowmobile_client_MainActivity_nativeInit(
                     activity
             );
 
-    engineInit();
+    g_running = true;
+
+    LOGI(
+            "Motor nativo inicializado."
+    );
 }
 
 
 // ============================================================
-// nativeSetWowFolder()
+// nativeSetWowFolder
 // ============================================================
 
 extern "C"
@@ -916,7 +1147,13 @@ Java_com_wowmobile_client_MainActivity_nativeSetWowFolder(
         jstring uri
 ) {
     if (uri == nullptr) {
-        engineSetWowFolder("");
+
+        std::lock_guard<std::mutex> lock(
+                g_mutex
+        );
+
+        g_wowFolderUri.clear();
+
         return;
     }
 
@@ -927,33 +1164,41 @@ Java_com_wowmobile_client_MainActivity_nativeSetWowFolder(
             );
 
     if (chars == nullptr) {
-        engineSetWowFolder("");
         return;
     }
 
-    engineSetWowFolder(
-            chars
-    );
+    {
+        std::lock_guard<std::mutex> lock(
+                g_mutex
+        );
+
+        g_wowFolderUri =
+                chars;
+    }
 
     env->ReleaseStringUTFChars(
             uri,
             chars
     );
+
+    LOGI(
+            "Raiz WoW configurada."
+    );
 }
 
 
 // ============================================================
-// nativeTestVfs()
+// nativeScanClient
 // ============================================================
 
 extern "C"
 JNIEXPORT jstring JNICALL
-Java_com_wowmobile_client_MainActivity_nativeTestVfs(
+Java_com_wowmobile_client_MainActivity_nativeScanClient(
         JNIEnv* env,
         jobject
 ) {
     std::string result =
-            engineTestVfs();
+            engineScanClient();
 
     return env->NewStringUTF(
             result.c_str()
@@ -962,7 +1207,7 @@ Java_com_wowmobile_client_MainActivity_nativeTestVfs(
 
 
 // ============================================================
-// nativeLogin()
+// nativeLogin
 // ============================================================
 
 extern "C"
@@ -973,37 +1218,43 @@ Java_com_wowmobile_client_MainActivity_nativeLogin(
         jstring username,
         jstring password
 ) {
-    if (username == nullptr ||
-        password == nullptr) {
+    if (
+            username == nullptr ||
+            password == nullptr
+    ) {
         return;
     }
 
-    const char* userChars =
+    const char* user =
             env->GetStringUTFChars(
                     username,
                     nullptr
             );
 
-    const char* passChars =
+    const char* pass =
             env->GetStringUTFChars(
                     password,
                     nullptr
             );
 
-    if (userChars == nullptr ||
-        passChars == nullptr) {
+    if (
+            user == nullptr ||
+            pass == nullptr
+    ) {
 
-        if (userChars != nullptr) {
+        if (user != nullptr) {
+
             env->ReleaseStringUTFChars(
                     username,
-                    userChars
+                    user
             );
         }
 
-        if (passChars != nullptr) {
+        if (pass != nullptr) {
+
             env->ReleaseStringUTFChars(
                     password,
-                    passChars
+                    pass
             );
         }
 
@@ -1011,24 +1262,24 @@ Java_com_wowmobile_client_MainActivity_nativeLogin(
     }
 
     engineLogin(
-            userChars,
-            passChars
+            user,
+            pass
     );
 
     env->ReleaseStringUTFChars(
             username,
-            userChars
+            user
     );
 
     env->ReleaseStringUTFChars(
             password,
-            passChars
+            pass
     );
 }
 
 
 // ============================================================
-// nativeTouchDown()
+// nativeTouchDown
 // ============================================================
 
 extern "C"
@@ -1047,7 +1298,7 @@ Java_com_wowmobile_client_MainActivity_nativeTouchDown(
 
 
 // ============================================================
-// nativeTouchMove()
+// nativeTouchMove
 // ============================================================
 
 extern "C"
@@ -1066,7 +1317,7 @@ Java_com_wowmobile_client_MainActivity_nativeTouchMove(
 
 
 // ============================================================
-// nativeTouchUp()
+// nativeTouchUp
 // ============================================================
 
 extern "C"
