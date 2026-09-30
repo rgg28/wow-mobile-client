@@ -203,7 +203,7 @@ jobs:
 
 
       # ============================================================
-      # 13. Compilar (Rutas corregidas incluyendo /openssl)
+      # 13. Compilar (Inyección forzada de argumentos para CMake)
       # ============================================================
 
       - name: Build Debug APK
@@ -212,16 +212,8 @@ jobs:
           gradle :app:assembleDebug \
             --no-daemon \
             --stacktrace \
-            --info
-        env:
-          # Se añade la subcarpeta /openssl mapeada desde la extracción real en disco
-          OPENSSL_ROOT_DIR: ${{ github.workspace }}/openssl-android/openssl
-          OPENSSL_INCLUDE_DIR: ${{ github.workspace }}/openssl-android/openssl/include
-          OPENSSL_CRYPTO_LIBRARY: ${{ github.workspace }}/openssl-android/openssl/lib/libcrypto.a
-          OPENSSL_SSL_LIBRARY: ${{ github.workspace }}/openssl-android/openssl/lib/libssl.a
-          
-          # Argumento de inyección explícita para la fase de configuración de CMake
-          CMAKE_ARGS: "-DOPENSSL_ROOT_DIR=${{ github.workspace }}/openssl-android/openssl -DOPENSSL_INCLUDE_DIR=${{ github.workspace }}/openssl-android/openssl/include -DOPENSSL_USE_STATIC_LIBS=TRUE"
+            --info \
+            -Pandroid.externalNativeBuild.cmake.arguments="-DOPENSSL_ROOT_DIR=${{ github.workspace }}/openssl-android/openssl -DOPENSSL_INCLUDE_DIR=${{ github.workspace }}/openssl-android/openssl/include -DOPENSSL_CRYPTO_LIBRARY=${{ github.workspace }}/openssl-android/openssl/lib/libcrypto.a -DOPENSSL_SSL_LIBRARY=${{ github.workspace }}/openssl-android/openssl/lib/libssl.a -DOPENSSL_USE_STATIC_LIBS=TRUE"
 
 
       # ============================================================
