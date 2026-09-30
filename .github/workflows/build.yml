@@ -1,419 +1,507 @@
-name: Build WoW Mobile
+name: Build WoW Mobile Client
 
 on:
   workflow_dispatch:
-
   push:
     branches:
       - main
       - master
 
 jobs:
-
   build:
+    runs-on: ubuntu-latest
 
-    runs-on: ubuntu-24.04
+    env:
+      ANDROID_NDK_VERSION: "28.2.13676358"
+      ANDROID_CMAKE_VERSION: "3.31.6"
+      ANDROID_PLATFORM: "android-35"
+      ANDROID_BUILD_TOOLS: "35.0.0"
+      ABI: "arm64-v8a"
 
     steps:
-
       # ============================================================
-      # 1. CHECKOUT DEL PROYECTO
+      # 1. CHECKOUT PRINCIPAL
       # ============================================================
-
-      - name: Checkout WoW Mobile
-        uses: actions/checkout@v4
-
-
-      # ============================================================
-      # 2. CHECKOUT WOWEE + SUBMÓDULOS
-      # ============================================================
-
-      - name: Checkout WoWee
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          repository: Kelsidavis/WoWee
-          path: wowee
           submodules: recursive
           fetch-depth: 0
 
-
       # ============================================================
-      # 3. JAVA 17
+      # 2. JAVA
       # ============================================================
-
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
+      # ============================================================
+      # 3. ANDROID SDK / NDK / CMAKE
+      # ============================================================
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+
+          sdkmanager \
+            "platform-tools" \
+            "${ANDROID_PLATFORM}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}" \
+            "cmake;${ANDROID_CMAKE_VERSION}" \
+            "ndk;${ANDROID_NDK_VERSION}"
 
       # ============================================================
       # 4. GRADLE
       # ============================================================
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-
 
       # ============================================================
-      # 5. LOCALIZAR ANDROID SDK
+      # 5. VERIFICAR ESTRUCTURA
       # ============================================================
-
-      - name: Configure Android SDK
+      - name: Check repository structure
         shell: bash
         run: |
+          echo "=============================================="
+          echo "ESTRUCTURA DEL PROYECTO"
+          echo "=============================================="
 
-          set -e
+          echo "Directorio actual:"
+          pwd
 
-          if [ -f "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+          echo
+          echo "Contenido:"
+          find . -maxdepth 2 -type f | sort | head -300
 
-            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          echo
+          echo "=============================================="
+          echo "WOWEE"
+          echo "=============================================="
 
-          elif [ -f "$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager" ]; then
-
-            SDKMANAGER="$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"
-
+          if [ -d "wowee" ]; then
+            echo "WoWee encontrado."
           else
-
-            SDKMANAGER=$(find \
-              "$ANDROID_HOME/cmdline-tools" \
-              -type f \
-              -name sdkmanager \
-              | head -1)
-
-          fi
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERROR: sdkmanager no encontrado."
+            echo "ERROR: No existe el directorio wowee."
             exit 1
           fi
 
-          echo "SDKMANAGER=$SDKMANAGER"
-
-          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
-
-          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
-
-
       # ============================================================
-      # 6. ACEPTAR LICENCIAS
+      # 6. VERIFICAR WOWEE
       # ============================================================
-
-      - name: Accept Android licenses
+      - name: Inspect WoWee source
         shell: bash
         run: |
+          echo "=============================================="
+          echo "INSPECCIONANDO WOWEE"
+          echo "=============================================="
 
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          find wowee \
+            \( -name "*.hpp" -o -name "*.h" -o -name "*.cpp" -o -name "*.cc" \) \
+            | sort \
+            | head -500
 
-
-      # ============================================================
-      # 7. INSTALAR TOOLCHAIN ANDROID
-      # ============================================================
-
-      - name: Install Android toolchain
-        shell: bash
-        run: |
-
-          set -e
-
-          "$SDKMANAGER" \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0" \
-            "cmake;3.31.6" \
-            "ndk;28.2.13676358"
-
+          echo
+          echo "Buscando AuthHandler:"
+          grep -Rni "class AuthHandler\|struct AuthHandler\|AuthHandler" wowee \
+            --include="*.hpp" \
+            --include="*.h" \
+            --include="*.cpp" \
+            --include="*.cc" \
+            | head -100 || true
 
       # ============================================================
-      # 8. VERIFICAR TOOLCHAIN
+      # 7. SDL3
       # ============================================================
-
-      - name: Verify Android toolchain
-        shell: bash
-        run: |
-
-          set -e
-
-          test -d "$ANDROID_HOME/ndk/28.2.13676358"
-
-          test -d "$ANDROID_HOME/cmake/3.31.6"
-
-          echo "NDK:"
-          ls -la "$ANDROID_HOME/ndk/28.2.13676358"
-
-          echo "CMake:"
-          "$ANDROID_HOME/cmake/3.31.6/bin/cmake" --version
-
-
-      # ============================================================
-      # 9. PREPARAR WOWEE
-      # ============================================================
-
-      - name: Prepare WoWee
-        working-directory: wowee
-        shell: bash
-        run: |
-
-          set -e
-
-          git submodule update --init --recursive
-
-
-      # ============================================================
-      # 10. SDL3
-      # ============================================================
-
-      - name: Checkout SDL3 official
+      - name: Checkout SDL3
         uses: actions/checkout@v4
         with:
           repository: libsdl-org/SDL
-          ref: main
           path: sdl3
           fetch-depth: 1
 
-
       # ============================================================
-      # 11. GLM
+      # 8. GLM
       # ============================================================
-
-      - name: Checkout GLM official
+      - name: Checkout GLM
         uses: actions/checkout@v4
         with:
           repository: g-truc/glm
-          ref: master
           path: glm-src
           fetch-depth: 1
 
-
       # ============================================================
-      # 12. OPENSSL
+      # 9. OPENSSL LOCAL
       # ============================================================
-
-      - name: Unzip Local OpenSSL
+      - name: Prepare OpenSSL
         shell: bash
         run: |
-
-          set -e
-
-          mkdir -p "${{ github.workspace }}/openssl-android"
-
-          unzip -q \
-            "./openssl.zip" \
-            -d "${{ github.workspace }}/openssl-android"
-
-          echo "OpenSSL extraído."
-
-          find "${{ github.workspace }}/openssl-android" \
-            -maxdepth 3 \
-            -type f \
-            | head -50
-
-
-      # ============================================================
-      # 13. LIMPIAR BUILD ANTERIOR
-      # ============================================================
-
-      - name: Clean Cache
-        shell: bash
-        run: |
-
-          set -e
-
-          gradle clean \
-            --no-daemon \
-            --stacktrace
-
-
-      # ============================================================
-      # 14. PREPARAR Y COMPILAR
-      #
-      # IMPORTANTE:
-      #
-      # NO modificamos wow_integration.cpp.
-      #
-      # Las versiones anteriores del workflow hacían:
-      #
-      #   Application -> wowee::core::Application
-      #   WorldSocket -> wowee::network::WorldSocket
-      #
-      # Eso producía:
-      #
-      #   wowee::core::wowee::core::Application
-      #   wowee::network::wowee::network::WorldSocket
-      #
-      # También modificaban AuthHandler y generaban declaraciones
-      # duplicadas.
-      # ============================================================
-
-      - name: Build Debug APK
-        shell: bash
-        run: |
-
-          set -e
-
           echo "=============================================="
-          echo "VERIFICACIÓN DE FUENTES"
+          echo "PREPARANDO OPENSSL"
           echo "=============================================="
 
-          test -f app/src/main/wow_engine.cpp
+          if [ ! -f "./openssl.zip" ]; then
+            echo "ADVERTENCIA: ./openssl.zip no existe."
+            echo "Se continuará sin extracción local de OpenSSL."
+          else
+            rm -rf "${GITHUB_WORKSPACE}/openssl-android"
+            mkdir -p "${GITHUB_WORKSPACE}/openssl-android"
 
-          test -f app/src/main/wow_integration.cpp
+            unzip -q "./openssl.zip" \
+              -d "${GITHUB_WORKSPACE}/openssl-android"
 
-          echo ""
-          echo "wow_integration.cpp:"
+            echo "OpenSSL extraído correctamente."
+            find "${GITHUB_WORKSPACE}/openssl-android" \
+              -maxdepth 4 \
+              -type f \
+              | head -100
+          fi
+
+      # ============================================================
+      # 10. NORMALIZAR INCLUDES SDL
+      # ============================================================
+      - name: Normalize WoWee SDL includes
+        shell: bash
+        run: |
+          echo "=============================================="
+          echo "NORMALIZANDO INCLUDES SDL"
+          echo "=============================================="
+
+          if [ -d "wowee" ]; then
+            grep -RIl \
+              --include="*.h" \
+              --include="*.hpp" \
+              --include="*.c" \
+              --include="*.cc" \
+              --include="*.cpp" \
+              'SDL2/' \
+              wowee \
+              | while read -r file; do
+                  sed -i 's#SDL2/#SDL3/#g' "$file"
+                done
+          fi
+
+          echo "Normalización terminada."
+
+      # ============================================================
+      # 11. INFORMACIÓN DEL TOOLCHAIN
+      # ============================================================
+      - name: Show Android toolchain
+        shell: bash
+        run: |
+          echo "=============================================="
+          echo "ANDROID TOOLCHAIN"
+          echo "=============================================="
+
+          echo "ANDROID_HOME=${ANDROID_HOME}"
+          echo "ANDROID_NDK_HOME=${ANDROID_NDK_HOME}"
+          echo "ANDROID_NDK_VERSION=${ANDROID_NDK_VERSION}"
+          echo "ANDROID_CMAKE_VERSION=${ANDROID_CMAKE_VERSION}"
+          echo "ABI=${ABI}"
+
+          echo
+          echo "NDK:"
+          ls -la "${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}" | head -30
+
+          echo
+          echo "CMake:"
+          "${ANDROID_HOME}/cmake/${ANDROID_CMAKE_VERSION}/bin/cmake" \
+            --version
+
+          echo
+          echo "Ninja:"
+          "${ANDROID_HOME}/cmake/${ANDROID_CMAKE_VERSION}/bin/ninja" \
+            --version
+
+      # ============================================================
+      # 12. VERIFICAR wow_integration.cpp
+      # ============================================================
+      - name: Validate WoW integration source
+        shell: bash
+        run: |
+          set -e
+
+          FILE="app/src/main/wow_integration.cpp"
+
+          echo "=============================================="
+          echo "VALIDANDO ${FILE}"
+          echo "=============================================="
+
+          if [ ! -f "$FILE" ]; then
+            echo "ERROR: No existe ${FILE}"
+            exit 1
+          fi
+
+          echo
+          echo "Contenido actual:"
+          echo "----------------------------------------------"
+          nl -ba "$FILE"
           echo "----------------------------------------------"
 
-          sed -n '1,240p' \
-            app/src/main/wow_integration.cpp
-
-          echo ""
-          echo "=============================================="
+          echo
           echo "COMPROBANDO NAMESPACES CORRUPTOS"
           echo "=============================================="
 
-          if grep -n \
-            -E \
-            'wowee::(core|network)::wowee::(core|network)' \
-            app/src/main/wow_integration.cpp; then
-
-            echo ""
-            echo "ERROR: namespace duplicado detectado."
-
+          if grep -q "wowee::core::wowee::core" "$FILE"; then
+            echo "ERROR: Namespace wowee::core duplicado."
             exit 1
           fi
 
-          if grep -n \
-            'g_WoWwowee' \
-            app/src/main/wow_integration.cpp; then
-
-            echo ""
-            echo "ERROR: identificador g_WoWwowee detectado."
-
+          if grep -q "wowee::network::wowee::network" "$FILE"; then
+            echo "ERROR: Namespace wowee::network duplicado."
             exit 1
           fi
 
-          echo "Namespaces OK."
+          if grep -q "g_WoWwowee" "$FILE"; then
+            echo "ERROR: Identificador g_WoWwowee corrupto."
+            exit 1
+          fi
 
+          echo "OK: No hay namespaces corruptos."
 
-          # ========================================================
-          # COMPROBAR AUTHHANDLER
-          # ========================================================
-
-          echo ""
-          echo "=============================================="
+          echo
           echo "COMPROBANDO AUTHHANDLER"
           echo "=============================================="
 
-          AUTH_COUNT=$(grep -c \
-            'AuthHandler auth' \
-            app/src/main/wow_integration.cpp || true)
+          AUTH_DECL_COUNT=$(
+            grep -Ec \
+              '^[[:space:]]*wowee::auth::AuthHandler[[:space:]]+auth[[:space:]]*;' \
+              "$FILE" || true
+          )
 
-          echo "AuthHandler encontrados: $AUTH_COUNT"
+          echo "Declaraciones de AuthHandler encontradas: ${AUTH_DECL_COUNT}"
 
-          if [ "$AUTH_COUNT" -gt 1 ]; then
-
-            echo ""
-            echo "ERROR: AuthHandler duplicado."
-
+          if [ "$AUTH_DECL_COUNT" -gt 1 ]; then
+            echo "ERROR: Hay más de una instancia local de AuthHandler."
+            echo
+            grep -n "wowee::auth::AuthHandler" "$FILE" || true
             exit 1
-
           fi
 
+          echo "OK: AuthHandler no está duplicado."
 
-          # ========================================================
-          # CONFIGURAR OPENSSL + GLM
-          # ========================================================
-
-          echo ""
-          echo "=============================================="
-          echo "CONFIGURANDO CMAKE"
+          echo
+          echo "COMPROBANDO LITERAL \\\\n"
           echo "=============================================="
 
-          NEW_CMAKE_ARGS="arguments '-DANDROID_STL=c++_shared', '-DOPENSSL_ROOT_DIR=${{ github.workspace }}/openssl-android/openssl', '-DOPENSSL_INCLUDE_DIR=${{ github.workspace }}/openssl-android/openssl/include', '-DOPENSSL_CRYPTO_LIBRARY=${{ github.workspace }}/openssl-android/openssl/lib/libcrypto.a', '-DOPENSSL_SSL_LIBRARY=${{ github.workspace }}/openssl-android/openssl/lib/libssl.a', '-DOPENSSL_USE_STATIC_LIBS=TRUE', '-DGLM_INCLUDE_DIR=${{ github.workspace }}/glm-src'"
+          if grep -Fq '\n' "$FILE"; then
+            echo "ERROR: Se encontró un literal \n dentro del código."
+            grep -nF '\n' "$FILE" || true
+            exit 1
+          fi
 
-          sed -i \
-            "s|arguments \"-DANDROID_STL=c++_shared\"|$NEW_CMAKE_ARGS|g" \
-            app/build.gradle
+          echo "OK: No hay literales \n."
 
-
-          # ========================================================
-          # SDL2 -> SDL3
-          # ========================================================
-
-          echo ""
-          echo "=============================================="
-          echo "ADAPTANDO INCLUDES SDL2 -> SDL3"
+          echo
+          echo "COMPROBANDO DECLARACIONES"
           echo "=============================================="
 
-          find "${{ github.workspace }}/wowee" \
-            -type f \
-            \( \
-              -name "*.hpp" \
-              -o -name "*.cpp" \
-              -o -name "*.h" \
-            \) \
-            -exec sed -i \
-            's|<SDL2/SDL.h>|<SDL3/SDL.h>|g' \
-            {} +
+          APP_COUNT=$(
+            grep -Ec \
+              'std::unique_ptr<wowee::core::Application>[[:space:]]+g_WoWApplication' \
+              "$FILE" || true
+          )
 
+          SOCKET_COUNT=$(
+            grep -Ec \
+              'std::unique_ptr<wowee::network::WorldSocket>[[:space:]]+g_WoWWorldSocket' \
+              "$FILE" || true
+          )
 
-          find "${{ github.workspace }}/wowee" \
-            -type f \
-            \( \
-              -name "*.hpp" \
-              -o -name "*.cpp" \
-              -o -name "*.h" \
-            \) \
-            -exec sed -i \
-            's|#include "SDL.h"|#include <SDL3/SDL.h>|g' \
-            {} +
+          echo "g_WoWApplication: ${APP_COUNT}"
+          echo "g_WoWWorldSocket: ${SOCKET_COUNT}"
 
+          if [ "$APP_COUNT" -gt 1 ]; then
+            echo "ERROR: g_WoWApplication duplicado."
+            exit 1
+          fi
 
-          # ========================================================
-          # COMPILAR
-          # ========================================================
+          if [ "$SOCKET_COUNT" -gt 1 ]; then
+            echo "ERROR: g_WoWWorldSocket duplicado."
+            exit 1
+          fi
 
-          echo ""
+          echo
           echo "=============================================="
-          echo "COMPILANDO WOW MOBILE"
+          echo "VALIDACION COMPLETADA"
           echo "=============================================="
 
-          gradle \
+      # ============================================================
+      # 13. MOSTRAR CMAKE
+      # ============================================================
+      - name: Inspect CMake configuration
+        shell: bash
+        run: |
+          echo "=============================================="
+          echo "CMAKE"
+          echo "=============================================="
+
+          if [ -f "app/src/main/CMakeLists.txt" ]; then
+            echo
+            echo "app/src/main/CMakeLists.txt:"
+            cat app/src/main/CMakeLists.txt
+          fi
+
+          if [ -f "app/CMakeLists.txt" ]; then
+            echo
+            echo "app/CMakeLists.txt:"
+            cat app/CMakeLists.txt
+          fi
+
+      # ============================================================
+      # 14. LIMPIAR BUILD ANTERIOR
+      # ============================================================
+      - name: Clean Android build
+        shell: bash
+        run: |
+          echo "=============================================="
+          echo "LIMPIANDO BUILD"
+          echo "=============================================="
+
+          rm -rf app/.cxx
+          rm -rf app/build
+
+          ./gradlew clean --no-daemon --stacktrace
+
+      # ============================================================
+      # 15. PREPARAR GRADLE / CMAKE
+      # ============================================================
+      - name: Configure native build arguments
+        shell: bash
+        run: |
+          echo "=============================================="
+          echo "CONFIGURANDO BUILD NATIVO"
+          echo "=============================================="
+
+          if [ ! -f "app/build.gradle" ]; then
+            echo "ERROR: No existe app/build.gradle"
+            exit 1
+          fi
+
+          echo
+          echo "app/build.gradle antes de modificar:"
+          cat app/build.gradle
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("app/build.gradle")
+          text = path.read_text(encoding="utf-8")
+
+          cmake_args = """
+                arguments "-DANDROID_STL=c++_shared"
+                arguments "-DANDROID_PLATFORM=android-35"
+                arguments "-DANDROID_ABI=arm64-v8a"
+                arguments "-DWOWEE_ANDROID=ON"
+                arguments "-DWOWEE_USE_SDL3=ON"
+          """
+
+          if "WOWEE_ANDROID=ON" not in text:
+              marker = "externalNativeBuild {"
+              if marker in text:
+                  text = text.replace(
+                      marker,
+                      marker + "\n" + cmake_args,
+                      1
+                  )
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+          echo
+          echo "app/build.gradle después de modificar:"
+          cat app/build.gradle
+
+      # ============================================================
+      # 16. COMPILAR DEBUG APK
+      # ============================================================
+      - name: Build Debug APK
+        shell: bash
+        run: |
+          set -o pipefail
+
+          echo "=============================================="
+          echo "COMPILANDO DEBUG APK"
+          echo "=============================================="
+
+          echo
+          echo "NO se modificará wow_integration.cpp."
+          echo "El archivo será compilado exactamente como fue validado."
+
+          echo
+          echo "=============================================="
+          echo "INTEGRACION FINAL"
+          echo "=============================================="
+
+          nl -ba app/src/main/wow_integration.cpp
+
+          echo
+          echo "=============================================="
+          echo "GRADLE BUILD"
+          echo "=============================================="
+
+          ./gradlew \
             :app:assembleDebug \
             --no-daemon \
             --stacktrace \
             --info
 
-
       # ============================================================
-      # 15. LOCALIZAR APK
+      # 17. BUSCAR APK
       # ============================================================
-
       - name: Locate APK
         shell: bash
         run: |
+          echo "=============================================="
+          echo "APK GENERADO"
+          echo "=============================================="
 
-          set -e
-
-          echo "APK generados:"
-
-          find \
-            app/build/outputs/apk \
+          find app/build/outputs/apk \
             -type f \
             -name "*.apk" \
-            -print
+            -print \
+            | sort
 
+          APK_COUNT=$(
+            find app/build/outputs/apk \
+              -type f \
+              -name "*.apk" \
+              | wc -l
+          )
+
+          echo
+          echo "APK encontrados: ${APK_COUNT}"
+
+          if [ "$APK_COUNT" -eq 0 ]; then
+            echo "ERROR: No se generó ningún APK."
+            exit 1
+          fi
 
       # ============================================================
-      # 16. SUBIR APK
+      # 18. SUBIR APK
       # ============================================================
-
-      - name: Upload APK
+      - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: wowmobile-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: wow-mobile-client-debug
+          path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
+
+      # ============================================================
+      # 19. INFORMACION FINAL
+      # ============================================================
+      - name: Build summary
+        if: success()
+        shell: bash
+        run: |
+          echo "=============================================="
+          echo "BUILD COMPLETADO"
+          echo "=============================================="
+
+          find app/build/outputs/apk \
+            -type f \
+            -name "*.apk" \
+            -exec ls -lh {} \;
