@@ -52,7 +52,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9' # <--- Cambia esto por la versión de Gradle que requiera tu proyecto (ej: 8.5, 8.7, etc.)
+          gradle-version: '8.9'
 
 
       # ============================================================
@@ -183,10 +183,11 @@ jobs:
       - name: Unzip Local OpenSSL
         shell: bash
         run: |
-          # Reemplaza ./openssl.zip con la ruta interna correcta si no está en la raíz
+          # Crear directorio explícito para evitar problemas de rutas relativas
+          mkdir -p ${{ github.workspace }}/openssl-android
           unzip -q "./openssl.zip" -d ${{ github.workspace }}/openssl-android
           
-          echo "Contenido extraído en openssl-android:"
+          echo "Contenido verificado en openssl-android:"
           ls -la ${{ github.workspace }}/openssl-android
 
 
@@ -203,7 +204,7 @@ jobs:
 
 
       # ============================================================
-      # 13. Compilar (Inyectando las rutas del OpenSSL 4.0.3 local)
+      # 13. Compilar (Inyectando variables de entorno y argumentos CMake)
       # ============================================================
 
       - name: Build Debug APK
@@ -214,10 +215,14 @@ jobs:
             --stacktrace \
             --info
         env:
+          # Rutas estándar del sistema para tareas de enlace
           OPENSSL_ROOT_DIR: ${{ github.workspace }}/openssl-android
           OPENSSL_INCLUDE_DIR: ${{ github.workspace }}/openssl-android/include
           OPENSSL_CRYPTO_LIBRARY: ${{ github.workspace }}/openssl-android/lib/libcrypto.a
           OPENSSL_SSL_LIBRARY: ${{ github.workspace }}/openssl-android/lib/libssl.a
+          
+          # Forzar inyección de parámetros nativos directamente en la ejecución de CMake
+          CMAKE_ARGS: "-DOPENSSL_ROOT_DIR=${{ github.workspace }}/openssl-android -DOPENSSL_INCLUDE_DIR=${{ github.workspace }}/openssl-android/include -DOPENSSL_USE_STATIC_LIBS=TRUE"
 
 
       # ============================================================
