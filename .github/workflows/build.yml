@@ -14,7 +14,7 @@ jobs:
     steps:
 
       # ============================================================
-      # 1. Nuestro proyecto
+      # 1. Nuestro proyecto (wow-mobile-client)
       # ============================================================
 
       - name: Checkout WoW Mobile
@@ -22,7 +22,7 @@ jobs:
 
 
       # ============================================================
-      # 2. WoWee + TODOS sus submódulos
+      # 2. WoWee + TODOS sus submódulos nativos
       # ============================================================
 
       - name: Checkout WoWee
@@ -157,10 +157,8 @@ jobs:
 
           echo "Submodules:"
           git submodule status --recursive
-
-
       # ============================================================
-      # 10. Clonar la rama oficial de SDL3
+      # 10. Clonar la biblioteca oficial de SDL3
       # ============================================================
 
       - name: Checkout SDL3 official
@@ -186,10 +184,10 @@ jobs:
 
 
       # ============================================================
-      # 12. Limpiar (Usando 'gradle' global)
+      # 12. Limpiar caché previa de compilación nativa
       # ============================================================
 
-      - name: Clean
+      - name: Clean Cache
         shell: bash
         run: |
           gradle clean \
@@ -210,40 +208,42 @@ jobs:
           # 2. Inyectamos los argumentos en el archivo app/build.gradle
           sed -i "s|arguments \"-DANDROID_STL=c++_shared\"|$NEW_CMAKE_ARGS|g" app/build.gradle
           
-          # 3. CONSTRUCCIÓN DE PARCHE LIMPIO EN CMAKElISTS
-          # Compilamos SDL3 al principio de la cadena nativa e inyectamos los flags globales
+          # 3. INTERCEPCIÓN AVANZADA DE CMAKElISTS (Secuestro de dependencias nativas)
+          # Al inicio del CMakeLists principal, compilamos SDL3 de forma nativa
+          # y desactivamos de manera forzada la descarga e inicialización automática de SDL2
           cat << 'EOF' > temp_patch.txt
-          # Forzar compilación e inclusión de SDL3 oficial
+          # Compilar la infraestructura oficial de SDL3 para el NDK
           add_subdirectory("/home/runner/work/wow-mobile-client/wow-mobile-client/sdl3" sdl3_build)
-          include_directories("/home/runner/work/work-mobile-client/wow-mobile-client/sdl3/include")
+          include_directories("/home/runner/work/wow-mobile-client/wow-mobile-client/sdl3/include")
           
-          # Bloquear de forma mandatoria la descarga interna de SDL2 por FetchContent
-          set(sdl2_POPULATED TRUE CACHE BOOL "Forced bypass of SDL2" FORCE)
-          set(SDL2_POPULATED TRUE CACHE BOOL "Forced bypass of SDL2" FORCE)
+          # Indicar a FetchContent que el paquete SDL2 / sdl2 ya fue procesado externamente
+          set(sdl2_POPULATED TRUE CACHE BOOL "Bypass FetchContent SDL2" FORCE)
+          set(SDL2_POPULATED TRUE CACHE BOOL "Bypass FetchContent SDL2" FORCE)
+          
+          # Desactivar la validación estricta de políticas de duplicidad de nombres en CMake
+          cmake_policy(SET CMP0002 OLD)
           EOF
           
-          # Combinamos con el archivo original de la app
+          # Adjuntamos el contenido de tu CMakeLists original debajo del bloque de control
           cat app/src/main/CMakeLists.txt >> temp_patch.txt
           mv temp_patch.txt app/src/main/CMakeLists.txt
           
-          # 4. Forzamos que las cabeceras de OpenSSL se lean globalmente al final del archivo
+          # 4. Forzamos la inclusión del directorio de OpenSSL al final para el enlazador criptográfico
           echo "include_directories(\"${{ github.workspace }}/openssl-android/openssl/include\")" >> app/src/main/CMakeLists.txt
           
-          # 5. VINCULACIÓN AL BLANCO PRINCIPAL (El truco maestro)
-          # El script del juego buscará enlazar a un target llamado SDL2. Como evitamos que se cree,
-          # le decimos a CMake que vincule el ejecutable 'wowmobile' directamente a 'SDL3-shared'.
+          # 5. Redireccionar los enlaces de enlace nativos del juego hacia SDL3-shared de forma explícita
           echo "target_link_libraries(wowmobile PRIVATE SDL3-shared)" >> app/src/main/CMakeLists.txt
           
-          # 6. PARCHE DE REFACTOR DE C++ (De SDL2 a SDL3)
-          # Reescribimos de forma masiva los includes del código para consumir la API moderna
+          # 6. REFACTORIZACIÓN EN CALIENTE DE ARCHIVOS DE C++ (De SDL2 a SDL3)
+          # Reemplazamos todas las llamadas a las cabeceras antiguas de las dependencias nativas del submódulo
           find ${{ github.workspace }}/wowee -type f \( -name "*.hpp" -o -name "*.cpp" -o -name "*.h" \) -exec sed -i 's|<SDL2/SDL.h>|<SDL3/SDL.h>|g' {} +
           find ${{ github.workspace }}/wowee -type f \( -name "*.hpp" -o -name "*.cpp" -o -name "*.h" \) -exec sed -i 's|#include "SDL.h"|#include <SDL3/SDL.h>|g' {} +
           
-          # 7. Verificación visual rápida en consola
-          echo "=== Encabezado superior de CMakeLists modificado ==="
+          # 7. Imprimir el encabezado final generado en los logs para auditoría visual
+          echo "=== Vista superior de la jerarquía de CMakeLists ==="
           head -n 25 app/src/main/CMakeLists.txt
           
-          # 8. Compilación final
+          # 8. Ejecución del compilador de Gradle
           gradle :app:assembleDebug \
             --no-daemon \
             --stacktrace \
