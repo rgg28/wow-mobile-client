@@ -32,7 +32,7 @@ jobs:
           fetch-depth: 0
 
       # ============================================================
-      # 2. WOWEE - REPOSITORY SEPARADO
+      # 2. WOWEE
       # ============================================================
 
       - name: Checkout WoWee
@@ -56,23 +56,15 @@ jobs:
           echo "REPOSITORIES"
           echo "=============================================="
 
-          echo "Workspace:"
           pwd
 
-          echo
-          echo "Main repository:"
           test -d app
-
-          echo "app/"
-          find app -maxdepth 2 -type f | sort | head -100
-
-          echo
-          echo "WoWee:"
           test -d wowee
           test -d wowee/include
           test -d wowee/src
 
-          echo "WoWee checkout OK."
+          echo "Main repository OK."
+          echo "WoWee repository OK."
 
       # ============================================================
       # 4. JAVA
@@ -93,10 +85,6 @@ jobs:
         run: |
           set -e
 
-          echo "=============================================="
-          echo "ANDROID SDK"
-          echo "=============================================="
-
           SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
 
           if [ ! -x "$SDKMANAGER" ]; then
@@ -116,8 +104,6 @@ jobs:
             exit 1
           fi
 
-          echo "SDKMANAGER=$SDKMANAGER"
-
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
           "$SDKMANAGER" \
@@ -128,7 +114,7 @@ jobs:
             "ndk;${ANDROID_NDK_VERSION}"
 
       # ============================================================
-      # 6. VERIFY ANDROID TOOLCHAIN
+      # 6. VERIFY ANDROID
       # ============================================================
 
       - name: Verify Android toolchain
@@ -136,28 +122,14 @@ jobs:
         run: |
           set -e
 
-          echo "=============================================="
-          echo "ANDROID TOOLCHAIN"
-          echo "=============================================="
-
-          echo "ANDROID_HOME=$ANDROID_HOME"
-
           test -d "${ANDROID_HOME}/platforms/${ANDROID_PLATFORM}"
           test -d "${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS}"
           test -d "${ANDROID_HOME}/cmake/${ANDROID_CMAKE_VERSION}"
           test -d "${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
 
-          echo
-          echo "CMake:"
           "${ANDROID_HOME}/cmake/${ANDROID_CMAKE_VERSION}/bin/cmake" --version
 
-          echo
-          echo "ADB:"
           "${ANDROID_HOME}/platform-tools/adb" version
-
-          echo
-          echo "NDK:"
-          cat "${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}/source.properties"
 
       # ============================================================
       # 7. SDL3
@@ -185,7 +157,7 @@ jobs:
       # 9. OPENSSL
       # ============================================================
 
-      - name: Extract OpenSSL
+      - name: Extract and configure OpenSSL
         shell: bash
         run: |
           set -e
@@ -197,31 +169,143 @@ jobs:
           test -f openssl.zip
 
           rm -rf openssl-android
+
           mkdir -p openssl-android
 
           unzip -q openssl.zip -d openssl-android
 
-          echo "OpenSSL extracted."
+          echo
+          echo "Buscando openssl/bn.h..."
 
-          find openssl-android \
-            -maxdepth 5 \
-            -type f \
-            | head -100
+          BN_HEADER="$(
+            find openssl-android \
+              -type f \
+              -path '*/openssl/bn.h' \
+              -print \
+              -quit
+          )"
+
+          if [ -z "$BN_HEADER" ]; then
+
+            echo
+            echo "ERROR: openssl/bn.h no existe dentro de openssl.zip"
+
+            echo
+            echo "Archivos relacionados encontrados:"
+
+            find openssl-android \
+              -type f \
+              \( \
+                -name "bn.h" \
+                -o -name "libcrypto.so" \
+                -o -name "libssl.so" \
+              \) \
+              -print
+
+            exit 1
+          fi
+
+          echo
+          echo "bn.h:"
+          echo "$BN_HEADER"
+
+          OPENSSL_INCLUDE_DIR="$(
+            dirname "$(dirname "$BN_HEADER")"
+          )"
+
+          echo
+          echo "OPENSSL_INCLUDE_DIR:"
+          echo "$OPENSSL_INCLUDE_DIR"
+
+          test -f "${OPENSSL_INCLUDE_DIR}/openssl/bn.h"
+
+          CRYPTO_LIB="$(
+            find openssl-android \
+              -type f \
+              -name 'libcrypto.so' \
+              -print \
+              -quit
+          )"
+
+          SSL_LIB="$(
+            find openssl-android \
+              -type f \
+              -name 'libssl.so' \
+              -print \
+              -quit
+          )"
+
+          if [ -z "$CRYPTO_LIB" ]; then
+            echo "ERROR: libcrypto.so no encontrado."
+            exit 1
+          fi
+
+          if [ -z "$SSL_LIB" ]; then
+            echo "ERROR: libssl.so no encontrado."
+            exit 1
+          fi
+
+          echo
+          echo "libcrypto:"
+          echo "$CRYPTO_LIB"
+
+          echo
+          echo "libssl:"
+          echo "$SSL_LIB"
+
+          CRYPTO_ABS="${GITHUB_WORKSPACE}/${CRYPTO_LIB}"
+          SSL_ABS="${GITHUB_WORKSPACE}/${SSL_LIB}"
+
+          echo
+          echo "Variables CMake:"
+
+          echo "OPENSSL_INCLUDE_DIR=${OPENSSL_INCLUDE_DIR}"
+          echo "OPENSSL_CRYPTO_LIBRARY=${CRYPTO_ABS}"
+          echo "OPENSSL_SSL_LIBRARY=${SSL_ABS}"
+
+          {
+            echo "OPENSSL_INCLUDE_DIR=${OPENSSL_INCLUDE_DIR}"
+            echo "OPENSSL_CRYPTO_LIBRARY=${CRYPTO_ABS}"
+            echo "OPENSSL_SSL_LIBRARY=${SSL_ABS}"
+          } >> "$GITHUB_ENV"
 
       # ============================================================
-      # 10. VERIFY WOWEE SOURCES
+      # 10. VERIFY OPENSSL
+      # ============================================================
+
+      - name: Verify OpenSSL configuration
+        shell: bash
+        run: |
+          set -e
+
+          echo "=============================================="
+          echo "VERIFY OPENSSL"
+          echo "=============================================="
+
+          echo "OPENSSL_INCLUDE_DIR=$OPENSSL_INCLUDE_DIR"
+          echo "OPENSSL_CRYPTO_LIBRARY=$OPENSSL_CRYPTO_LIBRARY"
+          echo "OPENSSL_SSL_LIBRARY=$OPENSSL_SSL_LIBRARY"
+
+          echo
+          echo "Header:"
+          ls -l "${OPENSSL_INCLUDE_DIR}/openssl/bn.h"
+
+          echo
+          echo "Crypto:"
+          ls -l "$OPENSSL_CRYPTO_LIBRARY"
+
+          echo
+          echo "SSL:"
+          ls -l "$OPENSSL_SSL_LIBRARY"
+
+      # ============================================================
+      # 11. VERIFY WOWEE
       # ============================================================
 
       - name: Verify WoWee sources
         shell: bash
         run: |
           set -e
-
-          echo "=============================================="
-          echo "WOWEE SOURCES"
-          echo "=============================================="
-
-          test -d wowee
 
           REQUIRED_FILES=(
 
@@ -265,6 +349,7 @@ jobs:
             "wowee/extern/imgui/imgui_draw.cpp"
             "wowee/extern/imgui/imgui_tables.cpp"
             "wowee/extern/imgui/imgui_widgets.cpp"
+
             "wowee/extern/imgui/backends/imgui_impl_sdl3.cpp"
             "wowee/extern/imgui/backends/imgui_impl_vulkan.cpp"
 
@@ -272,21 +357,20 @@ jobs:
           )
 
           for FILE in "${REQUIRED_FILES[@]}"; do
+
             if [ ! -f "$FILE" ]; then
               echo
               echo "ERROR: falta:"
               echo "$FILE"
               exit 1
             fi
+
           done
 
-          echo
-          echo "Todos los fuentes seleccionados por nuestro CMake existen."
-          echo "No se utiliza wowee/CMakeLists.txt."
-          echo "WoWee OK."
+          echo "Todos los archivos WoWee requeridos existen."
 
       # ============================================================
-      # 11. VERIFY ANDROID CMAKE
+      # 12. VERIFY CMAKE
       # ============================================================
 
       - name: Verify Android CMake
@@ -294,33 +378,26 @@ jobs:
         run: |
           set -e
 
-          echo "=============================================="
-          echo "ANDROID CMAKE"
-          echo "=============================================="
-
           CMAKE_FILE="app/src/main/CMakeLists.txt"
 
           test -f "$CMAKE_FILE"
 
+          grep -q 'wowee/src/auth/big_num.cpp' "$CMAKE_FILE"
           grep -q 'wowee/src/auth/auth_handler.cpp' "$CMAKE_FILE"
           grep -q 'wowee/src/network/world_socket.cpp' "$CMAKE_FILE"
           grep -q 'wowee/src/core/application.cpp' "$CMAKE_FILE"
           grep -q 'wowee/src/rendering/renderer.cpp' "$CMAKE_FILE"
 
-          echo "CMake Android OK."
+          echo "Android CMake OK."
 
       # ============================================================
-      # 12. VERIFY WOW INTEGRATION
+      # 13. VERIFY INTEGRATION
       # ============================================================
 
       - name: Validate WoW integration
         shell: bash
         run: |
           set -e
-
-          echo "=============================================="
-          echo "WOW INTEGRATION"
-          echo "=============================================="
 
           FILE="app/src/main/wow_integration.cpp"
 
@@ -332,59 +409,49 @@ jobs:
           fi
 
           if grep -q 'wowee::core::wowee::core' "$FILE"; then
-            echo "ERROR: namespace wowee::core duplicado."
+            echo "ERROR: namespace duplicado."
             exit 1
           fi
 
           if grep -q 'wowee::network::wowee::network' "$FILE"; then
-            echo "ERROR: namespace wowee::network duplicado."
+            echo "ERROR: namespace duplicado."
             exit 1
           fi
 
           echo "wow_integration.cpp OK."
 
       # ============================================================
-      # 13. INSTALL GRADLE 8.9
-      #
-      # NO necesitamos gradlew dentro del repositorio.
-      # Tampoco usamos los wrappers de WoWee o SDL3.
+      # 14. GRADLE
       # ============================================================
 
-      - name: Install Gradle
+      - name: Install Gradle 8.9
         shell: bash
         run: |
           set -e
 
-          echo "=============================================="
-          echo "GRADLE"
-          echo "=============================================="
+          GRADLE_ROOT="${RUNNER_TEMP}/gradle-${GRADLE_VERSION}"
 
-          GRADLE_DIR="${RUNNER_TEMP}/gradle-${GRADLE_VERSION}"
+          if [ ! -x "${GRADLE_ROOT}/bin/gradle" ]; then
 
-          if [ ! -x "${GRADLE_DIR}/bin/gradle" ]; then
-
-            mkdir -p "${RUNNER_TEMP}/gradle-download"
-
-            cd "${RUNNER_TEMP}/gradle-download"
+            cd "${RUNNER_TEMP}"
 
             wget -q \
               "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" \
               -O gradle.zip
 
-            rm -rf "${GRADLE_DIR}"
+            rm -rf "$GRADLE_ROOT"
 
             unzip -q gradle.zip \
               -d "${RUNNER_TEMP}"
 
           fi
 
-          echo "${GRADLE_DIR}/bin" >> "$GITHUB_PATH"
+          echo "${GRADLE_ROOT}/bin" >> "$GITHUB_PATH"
 
-          echo "Gradle instalado:"
-          "${GRADLE_DIR}/bin/gradle" --version
+          "${GRADLE_ROOT}/bin/gradle" --version
 
       # ============================================================
-      # 14. VERIFY GRADLE PROJECT
+      # 15. VERIFY GRADLE PROJECT
       # ============================================================
 
       - name: Verify Gradle project
@@ -392,32 +459,28 @@ jobs:
         run: |
           set -e
 
-          echo "=============================================="
-          echo "GRADLE PROJECT"
-          echo "=============================================="
-
           if [ -f settings.gradle ]; then
-            echo "Encontrado: settings.gradle"
+            echo "settings.gradle encontrado."
           elif [ -f settings.gradle.kts ]; then
-            echo "Encontrado: settings.gradle.kts"
+            echo "settings.gradle.kts encontrado."
           else
-            echo "ERROR: no existe settings.gradle ni settings.gradle.kts"
-            echo
-            echo "Archivos raíz:"
-            find . -maxdepth 1 -type f -print | sort
+            echo "ERROR: falta settings.gradle/settings.gradle.kts."
             exit 1
           fi
 
-          test -f app/build.gradle || \
-          test -f app/build.gradle.kts
-
-          echo
-          echo "Proyecto Android Gradle OK."
+          if [ -f app/build.gradle ]; then
+            echo "app/build.gradle encontrado."
+          elif [ -f app/build.gradle.kts ]; then
+            echo "app/build.gradle.kts encontrado."
+          else
+            echo "ERROR: falta app/build.gradle."
+            exit 1
+          fi
 
           gradle --version
 
       # ============================================================
-      # 15. CLEAN
+      # 16. CLEAN
       # ============================================================
 
       - name: Clean native build
@@ -425,17 +488,13 @@ jobs:
         run: |
           set -e
 
-          echo "=============================================="
-          echo "CLEAN"
-          echo "=============================================="
-
           rm -rf app/.cxx
           rm -rf app/build
 
           gradle clean --no-daemon
 
       # ============================================================
-      # 16. SHOW CONFIGURATION
+      # 17. SHOW CMAKE
       # ============================================================
 
       - name: Show build configuration
@@ -444,7 +503,7 @@ jobs:
           set -e
 
           echo "=============================================="
-          echo "app/build.gradle"
+          echo "BUILD.GRADLE"
           echo "=============================================="
 
           if [ -f app/build.gradle ]; then
@@ -455,13 +514,13 @@ jobs:
 
           echo
           echo "=============================================="
-          echo "app/src/main/CMakeLists.txt"
+          echo "CMAKE"
           echo "=============================================="
 
-          sed -n '1,420p' app/src/main/CMakeLists.txt
+          sed -n '1,500p' app/src/main/CMakeLists.txt
 
       # ============================================================
-      # 17. BUILD APK
+      # 18. BUILD APK
       # ============================================================
 
       - name: Build APK
@@ -480,7 +539,7 @@ jobs:
             --info
 
       # ============================================================
-      # 18. FIND APK
+      # 19. FIND APK
       # ============================================================
 
       - name: Find APK
@@ -497,14 +556,15 @@ jobs:
             -name "*.apk" \
             -print
 
-          APK="$(find app/build/outputs/apk \
-            -type f \
-            -name "*.apk" \
-            -print \
-            -quit)"
+          APK="$(
+            find app/build/outputs/apk \
+              -type f \
+              -name "*.apk" \
+              -print \
+              -quit
+          )"
 
           if [ -z "$APK" ]; then
-            echo
             echo "ERROR: no se genero ningun APK."
             exit 1
           fi
@@ -514,7 +574,7 @@ jobs:
           echo "$APK"
 
       # ============================================================
-      # 19. UPLOAD APK
+      # 20. UPLOAD APK
       # ============================================================
 
       - name: Upload APK
