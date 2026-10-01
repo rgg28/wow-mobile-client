@@ -21,19 +21,15 @@ jobs:
 
     steps:
 
-      # ============================================================
-      # 1. MAIN REPOSITORY
-      # ============================================================
+      # ==========================================================
+      # SOURCE
+      # ==========================================================
 
       - name: Checkout wow-mobile-client
         uses: actions/checkout@v4
         with:
           submodules: recursive
           fetch-depth: 0
-
-      # ============================================================
-      # 2. WOWEE
-      # ============================================================
 
       - name: Checkout WoWee
         uses: actions/checkout@v4
@@ -42,10 +38,6 @@ jobs:
           path: wowee
           submodules: recursive
           fetch-depth: 0
-
-      # ============================================================
-      # 3. VERIFY REPOSITORIES
-      # ============================================================
 
       - name: Verify repositories
         shell: bash
@@ -56,26 +48,19 @@ jobs:
           echo "REPOSITORIES"
           echo "=============================================="
 
-          echo "Workspace:"
           pwd
 
-          echo
-          echo "Main repository:"
           test -d app
-
-          echo "app/ encontrado."
-
-          echo
-          echo "WoWee:"
           test -d wowee
           test -d wowee/include
           test -d wowee/src
 
-          echo "WoWee checkout OK."
+          echo "wow-mobile-client: OK"
+          echo "WoWee: OK"
 
-      # ============================================================
-      # 4. JAVA
-      # ============================================================
+      # ==========================================================
+      # JAVA
+      # ==========================================================
 
       - name: Setup JDK
         uses: actions/setup-java@v4
@@ -83,9 +68,9 @@ jobs:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
-      # ============================================================
-      # 5. ANDROID SDK
-      # ============================================================
+      # ==========================================================
+      # ANDROID SDK
+      # ==========================================================
 
       - name: Configure Android SDK
         shell: bash
@@ -117,10 +102,16 @@ jobs:
             exit 1
           fi
 
-          echo "SDKMANAGER:"
+          echo "sdkmanager:"
           echo "$SDKMANAGER"
 
+          echo ""
+          echo "Aceptando licencias..."
+
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+
+          echo ""
+          echo "Instalando componentes..."
 
           "$SDKMANAGER" \
             "platform-tools" \
@@ -128,10 +119,6 @@ jobs:
             "build-tools;${ANDROID_BUILD_TOOLS}" \
             "cmake;${ANDROID_CMAKE_VERSION}" \
             "ndk;${ANDROID_NDK_VERSION}"
-
-      # ============================================================
-      # 6. VERIFY ANDROID TOOLCHAIN
-      # ============================================================
 
       - name: Verify Android toolchain
         shell: bash
@@ -149,21 +136,21 @@ jobs:
           test -d "${ANDROID_HOME}/cmake/${ANDROID_CMAKE_VERSION}"
           test -d "${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
 
-          echo
+          echo ""
           echo "CMake:"
           "${ANDROID_HOME}/cmake/${ANDROID_CMAKE_VERSION}/bin/cmake" --version
 
-          echo
+          echo ""
           echo "ADB:"
           "${ANDROID_HOME}/platform-tools/adb" version
 
-          echo
+          echo ""
           echo "NDK:"
           cat "${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}/source.properties"
 
-      # ============================================================
-      # 7. SDL3
-      # ============================================================
+      # ==========================================================
+      # SDL3
+      # ==========================================================
 
       - name: Checkout SDL3
         uses: actions/checkout@v4
@@ -172,9 +159,9 @@ jobs:
           path: sdl3
           fetch-depth: 1
 
-      # ============================================================
-      # 8. GLM
-      # ============================================================
+      # ==========================================================
+      # GLM
+      # ==========================================================
 
       - name: Checkout GLM
         uses: actions/checkout@v4
@@ -183,9 +170,9 @@ jobs:
           path: glm-src
           fetch-depth: 1
 
-      # ============================================================
-      # 9. OPENSSL STATIC
-      # ============================================================
+      # ==========================================================
+      # OPENSSL
+      # ==========================================================
 
       - name: Extract and configure OpenSSL
         shell: bash
@@ -193,7 +180,7 @@ jobs:
           set -e
 
           echo "=============================================="
-          echo "OPENSSL STATIC"
+          echo "OPENSSL"
           echo "=============================================="
 
           test -f openssl.zip
@@ -204,22 +191,8 @@ jobs:
 
           unzip -q openssl.zip -d openssl-android
 
-          echo
-          echo "Contenido de OpenSSL:"
-          find openssl-android \
-            -maxdepth 8 \
-            -type f \
-            | sort \
-            | head -300
-
-          # ========================================================
-          # HEADER
-          # ========================================================
-
-          echo
-          echo "=============================================="
-          echo "BUSCANDO OPENSSL/Bn.H"
-          echo "=============================================="
+          echo ""
+          echo "Buscando openssl/bn.h..."
 
           BN_HEADER="$(
             find openssl-android \
@@ -230,33 +203,29 @@ jobs:
           )"
 
           if [ -z "$BN_HEADER" ]; then
-            echo
             echo "ERROR: no se encontró openssl/bn.h."
             exit 1
           fi
 
-          echo
-          echo "bn.h encontrado:"
+          echo "bn.h:"
           echo "$BN_HEADER"
 
           OPENSSL_INCLUDE_DIR="$(
             dirname "$(dirname "$BN_HEADER")"
           )"
 
-          echo
+          if [ ! -f "${OPENSSL_INCLUDE_DIR}/openssl/bn.h" ]; then
+            echo "ERROR: ruta OpenSSL inválida."
+            echo "$OPENSSL_INCLUDE_DIR"
+            exit 1
+          fi
+
+          echo ""
           echo "OPENSSL_INCLUDE_DIR:"
           echo "$OPENSSL_INCLUDE_DIR"
 
-          test -f "${OPENSSL_INCLUDE_DIR}/openssl/bn.h"
-
-          # ========================================================
-          # LIBCRYPTO.A
-          # ========================================================
-
-          echo
-          echo "=============================================="
-          echo "BUSCANDO LIBCRYPTO.A"
-          echo "=============================================="
+          echo ""
+          echo "Buscando libcrypto.a..."
 
           CRYPTO_LIB="$(
             find openssl-android \
@@ -267,11 +236,10 @@ jobs:
           )"
 
           if [ -z "$CRYPTO_LIB" ]; then
-            echo
             echo "ERROR: libcrypto.a no encontrado."
 
-            echo
-            echo "Bibliotecas .a disponibles:"
+            echo ""
+            echo "Librerías .a encontradas:"
             find openssl-android \
               -type f \
               -name '*.a' \
@@ -281,18 +249,11 @@ jobs:
             exit 1
           fi
 
-          echo
           echo "libcrypto.a:"
           echo "$CRYPTO_LIB"
 
-          # ========================================================
-          # LIBSSL.A
-          # ========================================================
-
-          echo
-          echo "=============================================="
-          echo "BUSCANDO LIBSSL.A"
-          echo "=============================================="
+          echo ""
+          echo "Buscando libssl.a..."
 
           SSL_LIB="$(
             find openssl-android \
@@ -303,11 +264,10 @@ jobs:
           )"
 
           if [ -z "$SSL_LIB" ]; then
-            echo
             echo "ERROR: libssl.a no encontrado."
 
-            echo
-            echo "Bibliotecas .a disponibles:"
+            echo ""
+            echo "Librerías .a encontradas:"
             find openssl-android \
               -type f \
               -name '*.a' \
@@ -317,47 +277,24 @@ jobs:
             exit 1
           fi
 
-          echo
           echo "libssl.a:"
           echo "$SSL_LIB"
-
-          # ========================================================
-          # ABSOLUTE PATHS
-          # ========================================================
 
           CRYPTO_ABS="${GITHUB_WORKSPACE}/${CRYPTO_LIB}"
           SSL_ABS="${GITHUB_WORKSPACE}/${SSL_LIB}"
 
-          echo
-          echo "=============================================="
-          echo "OPENSSL CONFIGURATION"
-          echo "=============================================="
-
-          echo "OPENSSL_INCLUDE_DIR:"
-          echo "$OPENSSL_INCLUDE_DIR"
-
-          echo
-          echo "OPENSSL_CRYPTO_LIBRARY:"
-          echo "$CRYPTO_ABS"
-
-          echo
-          echo "OPENSSL_SSL_LIBRARY:"
-          echo "$SSL_ABS"
-
-          # ========================================================
-          # VERIFY
-          # ========================================================
+          echo ""
+          echo "Verificando archivos..."
 
           test -f "${OPENSSL_INCLUDE_DIR}/openssl/bn.h"
           test -f "${CRYPTO_ABS}"
           test -f "${SSL_ABS}"
 
-          echo
-          echo "OpenSSL estático encontrado correctamente."
+          echo ""
+          echo "OpenSSL configurado correctamente."
 
-          # ========================================================
-          # EXPORT TO GITHUB ENV
-          # ========================================================
+          echo ""
+          echo "Exportando variables..."
 
           {
             echo "OPENSSL_INCLUDE_DIR=${OPENSSL_INCLUDE_DIR}"
@@ -365,49 +302,39 @@ jobs:
             echo "OPENSSL_SSL_LIBRARY=${SSL_ABS}"
           } >> "$GITHUB_ENV"
 
-      # ============================================================
-      # 10. VERIFY OPENSSL
-      # ============================================================
-
       - name: Verify OpenSSL configuration
         shell: bash
         run: |
           set -e
 
           echo "=============================================="
-          echo "VERIFY OPENSSL"
+          echo "OPENSSL CONFIGURATION"
           echo "=============================================="
 
-          echo
           echo "Include:"
           echo "$OPENSSL_INCLUDE_DIR"
 
-          echo
+          echo ""
           echo "Crypto:"
           echo "$OPENSSL_CRYPTO_LIBRARY"
 
-          echo
+          echo ""
           echo "SSL:"
           echo "$OPENSSL_SSL_LIBRARY"
 
-          echo
-          echo "Header:"
-          ls -lh \
-            "${OPENSSL_INCLUDE_DIR}/openssl/bn.h"
+          echo ""
 
-          echo
-          echo "libcrypto.a:"
-          ls -lh \
-            "$OPENSSL_CRYPTO_LIBRARY"
+          test -f "${OPENSSL_INCLUDE_DIR}/openssl/bn.h"
+          test -f "${OPENSSL_CRYPTO_LIBRARY}"
+          test -f "${OPENSSL_SSL_LIBRARY}"
 
-          echo
-          echo "libssl.a:"
-          ls -lh \
-            "$OPENSSL_SSL_LIBRARY"
+          ls -lh "${OPENSSL_INCLUDE_DIR}/openssl/bn.h"
+          ls -lh "${OPENSSL_CRYPTO_LIBRARY}"
+          ls -lh "${OPENSSL_SSL_LIBRARY}"
 
-      # ============================================================
-      # 11. VERIFY WOWEE SOURCES
-      # ============================================================
+      # ==========================================================
+      # WOWEE SOURCES
+      # ==========================================================
 
       - name: Verify WoWee sources
         shell: bash
@@ -469,19 +396,17 @@ jobs:
 
           for FILE in "${REQUIRED_FILES[@]}"; do
             if [ ! -f "$FILE" ]; then
-              echo
               echo "ERROR: falta:"
               echo "$FILE"
               exit 1
             fi
+
+            echo "OK: $FILE"
           done
 
-          echo
-          echo "Todos los fuentes WoWee requeridos existen."
-
-      # ============================================================
-      # 12. VERIFY ANDROID CMAKE
-      # ============================================================
+      # ==========================================================
+      # CMAKE
+      # ==========================================================
 
       - name: Verify Android CMake
         shell: bash
@@ -494,20 +419,81 @@ jobs:
 
           CMAKE_FILE="app/src/main/CMakeLists.txt"
 
-          test -f "$CMAKE_FILE"
+          echo ""
+          echo "Directorio actual:"
+          pwd
 
-          grep -q 'wowee/src/auth/big_num.cpp' "$CMAKE_FILE"
-          grep -q 'wowee/src/auth/auth_handler.cpp' "$CMAKE_FILE"
-          grep -q 'wowee/src/network/world_socket.cpp' "$CMAKE_FILE"
-          grep -q 'wowee/src/core/application.cpp' "$CMAKE_FILE"
-          grep -q 'wowee/src/rendering/renderer.cpp' "$CMAKE_FILE"
+          echo ""
+          echo "Archivo CMake:"
 
-          echo
-          echo "CMake Android OK."
+          if [ ! -f "$CMAKE_FILE" ]; then
+            echo "ERROR: no existe:"
+            echo "$CMAKE_FILE"
+            exit 1
+          fi
 
-      # ============================================================
-      # 13. VERIFY WOW INTEGRATION
-      # ============================================================
+          ls -lh "$CMAKE_FILE"
+
+          echo ""
+          echo "OpenSSL desde entorno:"
+          echo "OPENSSL_INCLUDE_DIR=$OPENSSL_INCLUDE_DIR"
+          echo "OPENSSL_CRYPTO_LIBRARY=$OPENSSL_CRYPTO_LIBRARY"
+          echo "OPENSSL_SSL_LIBRARY=$OPENSSL_SSL_LIBRARY"
+
+          echo ""
+          echo "Referencias WoWee:"
+
+          if ! grep -n "wowee/src/auth/big_num.cpp" "$CMAKE_FILE"; then
+            echo "ERROR: falta big_num.cpp"
+            exit 1
+          fi
+
+          if ! grep -n "wowee/src/auth/auth_handler.cpp" "$CMAKE_FILE"; then
+            echo "ERROR: falta auth_handler.cpp"
+            exit 1
+          fi
+
+          if ! grep -n "wowee/src/network/world_socket.cpp" "$CMAKE_FILE"; then
+            echo "ERROR: falta world_socket.cpp"
+            exit 1
+          fi
+
+          if ! grep -n "wowee/src/core/application.cpp" "$CMAKE_FILE"; then
+            echo "ERROR: falta application.cpp"
+            exit 1
+          fi
+
+          if ! grep -n "wowee/src/rendering/renderer.cpp" "$CMAKE_FILE"; then
+            echo "ERROR: falta renderer.cpp"
+            exit 1
+          fi
+
+          echo ""
+          echo "Referencias OpenSSL:"
+
+          if ! grep -n "OPENSSL_INCLUDE_DIR" "$CMAKE_FILE"; then
+            echo "ERROR: falta OPENSSL_INCLUDE_DIR"
+            exit 1
+          fi
+
+          if ! grep -n "OPENSSL_CRYPTO_LIBRARY" "$CMAKE_FILE"; then
+            echo "ERROR: falta OPENSSL_CRYPTO_LIBRARY"
+            exit 1
+          fi
+
+          if ! grep -n "OPENSSL_SSL_LIBRARY" "$CMAKE_FILE"; then
+            echo "ERROR: falta OPENSSL_SSL_LIBRARY"
+            exit 1
+          fi
+
+          echo ""
+          echo "=============================================="
+          echo "ANDROID CMAKE OK"
+          echo "=============================================="
+
+      # ==========================================================
+      # INTEGRATION
+      # ==========================================================
 
       - name: Validate WoW integration
         shell: bash
@@ -537,12 +523,11 @@ jobs:
             exit 1
           fi
 
-          echo
-          echo "wow_integration.cpp OK."
+          echo "wow_integration.cpp: OK"
 
-      # ============================================================
-      # 14. INSTALL GRADLE
-      # ============================================================
+      # ==========================================================
+      # GRADLE
+      # ==========================================================
 
       - name: Install Gradle 8.9
         shell: bash
@@ -565,20 +550,13 @@ jobs:
 
             rm -rf "$GRADLE_ROOT"
 
-            unzip -q gradle.zip \
-              -d "${RUNNER_TEMP}"
+            unzip -q gradle.zip -d "${RUNNER_TEMP}"
 
           fi
 
           echo "${GRADLE_ROOT}/bin" >> "$GITHUB_PATH"
 
-          echo
-          echo "Gradle:"
           "${GRADLE_ROOT}/bin/gradle" --version
-
-      # ============================================================
-      # 15. VERIFY GRADLE PROJECT
-      # ============================================================
 
       - name: Verify Gradle project
         shell: bash
@@ -594,7 +572,6 @@ jobs:
           elif [ -f settings.gradle.kts ]; then
             echo "settings.gradle.kts encontrado."
           else
-            echo
             echo "ERROR: no existe settings.gradle ni settings.gradle.kts."
             exit 1
           fi
@@ -604,17 +581,16 @@ jobs:
           elif [ -f app/build.gradle.kts ]; then
             echo "app/build.gradle.kts encontrado."
           else
-            echo
             echo "ERROR: no existe app/build.gradle ni app/build.gradle.kts."
             exit 1
           fi
 
-          echo
+          echo ""
           gradle --version
 
-      # ============================================================
-      # 16. CLEAN
-      # ============================================================
+      # ==========================================================
+      # CLEAN
+      # ==========================================================
 
       - name: Clean native build
         shell: bash
@@ -630,9 +606,9 @@ jobs:
 
           gradle clean --no-daemon
 
-      # ============================================================
-      # 17. SHOW BUILD CONFIGURATION
-      # ============================================================
+      # ==========================================================
+      # BUILD CONFIGURATION
+      # ==========================================================
 
       - name: Show build configuration
         shell: bash
@@ -640,8 +616,11 @@ jobs:
           set -e
 
           echo "=============================================="
-          echo "BUILD GRADLE"
+          echo "BUILD CONFIGURATION"
           echo "=============================================="
+
+          echo ""
+          echo "----- app/build.gradle -----"
 
           if [ -f app/build.gradle ]; then
             sed -n '1,360p' app/build.gradle
@@ -649,16 +628,21 @@ jobs:
             sed -n '1,360p' app/build.gradle.kts
           fi
 
-          echo
-          echo "=============================================="
-          echo "CMAKE"
-          echo "=============================================="
+          echo ""
+          echo "----- CMakeLists.txt -----"
 
           sed -n '1,500p' app/src/main/CMakeLists.txt
 
-      # ============================================================
-      # 18. BUILD APK
-      # ============================================================
+          echo ""
+          echo "----- OPENSSL -----"
+
+          echo "OPENSSL_INCLUDE_DIR=$OPENSSL_INCLUDE_DIR"
+          echo "OPENSSL_CRYPTO_LIBRARY=$OPENSSL_CRYPTO_LIBRARY"
+          echo "OPENSSL_SSL_LIBRARY=$OPENSSL_SSL_LIBRARY"
+
+      # ==========================================================
+      # BUILD
+      # ==========================================================
 
       - name: Build APK
         shell: bash
@@ -666,7 +650,7 @@ jobs:
           set -e
 
           echo "=============================================="
-          echo "BUILD WOW MOBILE"
+          echo "BUILD APK"
           echo "=============================================="
 
           gradle \
@@ -675,9 +659,9 @@ jobs:
             --stacktrace \
             --info
 
-      # ============================================================
-      # 19. FIND APK
-      # ============================================================
+      # ==========================================================
+      # APK
+      # ==========================================================
 
       - name: Find APK
         shell: bash
@@ -685,7 +669,7 @@ jobs:
           set -e
 
           echo "=============================================="
-          echo "APK OUTPUT"
+          echo "APK"
           echo "=============================================="
 
           find app/build/outputs/apk \
@@ -702,18 +686,13 @@ jobs:
           )"
 
           if [ -z "$APK" ]; then
-            echo
             echo "ERROR: no se genero ningun APK."
             exit 1
           fi
 
-          echo
+          echo ""
           echo "APK generado:"
           echo "$APK"
-
-      # ============================================================
-      # 20. UPLOAD APK
-      # ============================================================
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
