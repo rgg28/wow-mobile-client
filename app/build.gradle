@@ -20,7 +20,13 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags "-std=c++20"
-                arguments "-DANDROID_STL=c++_shared"
+
+                arguments \
+                    "-DANDROID_STL=c++_shared", \
+                    "-DOPENSSL_INCLUDE_DIR=${System.getenv('OPENSSL_INCLUDE_DIR') ?: ''}", \
+                    "-DOPENSSL_CRYPTO_LIBRARY=${System.getenv('OPENSSL_CRYPTO_LIBRARY') ?: ''}", \
+                    "-DOPENSSL_SSL_LIBRARY=${System.getenv('OPENSSL_SSL_LIBRARY') ?: ''}", \
+                    "-DGLM_INCLUDE_DIR=${System.getenv('GLM_INCLUDE_DIR') ?: ''}"
             }
         }
     }
