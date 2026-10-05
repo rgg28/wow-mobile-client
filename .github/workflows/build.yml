@@ -50,9 +50,7 @@ jobs:
             if (!renderer) { SDL_DestroyWindow(window); SDL_Quit(); return -3; }
             bool isRunning = true; SDL_Event event;
             while (isRunning) {
-                while (SDL_PollEvent(&event)) {
-                    if (event.type == SDL_EVENT_QUIT) isRunning = false;
-                }
+                while (SDL_PollEvent(&event)) { if (event.type == SDL_EVENT_QUIT) isRunning = false; }
                 SDL_SetRenderDrawColor(renderer, 15, 15, 15, 255);
                 SDL_RenderClear(renderer);
                 SDL_RenderPresent(renderer);
@@ -76,9 +74,7 @@ jobs:
         elseif(TARGET stormlib)
             set(STORM_TARGET stormlib)
         endif()
-        find_library(LOG_L log)
-        find_library(GLES_L GLESv3)
-        find_library(AND_L android)
+        find_library(LOG_L log) find_library(GLES_L GLESv3) find_library(AND_L android)
         target_link_libraries(main PRIVATE SDL3::SDL3 ${STORM_TARGET} ${LOG_L} ${GLES_L} ${AND_L})
         target_compile_definitions(main PRIVATE STORMLIB_NO_AUTO_LINK)
         EOF
@@ -98,7 +94,13 @@ jobs:
             </application>
         </manifest>
         EOF
-        echo "plugins { id 'com.android.application' version '8.1.1' apply false }" > app-project/build.gradle
+        cat << 'EOF' > app-project/build.gradle
+        buildscript {
+            repositories { google() ; mavenCentral() }
+            dependencies { classpath 'com.android.tools.build:gradle:8.1.1' }
+        }
+        allprojects { repositories { google() ; mavenCentral() } }
+        EOF
         echo "include ':app'" > app-project/settings.gradle
         cat << 'EOF' > app-project/app/build.gradle
         plugins { id 'com.android.application' }
