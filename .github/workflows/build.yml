@@ -116,7 +116,12 @@ jobs:
                 externalNativeBuild { cmake { cppFlags "-std=c++17" } }
             }
             buildFeatures { prefab true }
-            externalNativeBuild { cmake { path file("../jni/CMakeLists.txt") \n version "3.31.5" } }
+            externalNativeBuild { 
+                cmake { 
+                    path file("../jni/CMakeLists.txt") 
+                    version "3.31.5" 
+                } 
+            }
             packaging { jniLibs { useLegacyPackaging true } }
             buildTypes {
                 release {
