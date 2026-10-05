@@ -1,150 +1,668 @@
 name: Build Full WoW Android Engine
+
 on:
   workflow_dispatch:
+
 jobs:
   build-everything:
     runs-on: ubuntu-latest
+
     env:
       ANDROID_COMPILE_SDK: "35"
       ANDROID_BUILD_TOOLS: "35.0.0"
       ANDROID_NDK_VERSION: "28.2.13676358"
       CMAKE_VERSION: "3.31.5"
+
     steps:
-    - name: 1. Checkout
-      uses: actions/checkout@v4
-    - name: 2. Java
-      uses: actions/setup-java@v4
-      with:
-        distribution: temurin
-        java-version: "17"
-    - name: 3. Toolchain
-      run: |
-        SDK="${ANDROID_HOME}"
-        SDKMANAGER="${SDK}/cmdline-tools/latest/bin/sdkmanager"
-        yes | "${SDKMANAGER}" --licenses >/dev/null 2>&1 || true
-        "${SDKMANAGER}" "platform-tools" "platforms;android-${ANDROID_COMPILE_SDK}" "build-tools;${ANDROID_BUILD_TOOLS}" "ndk;${ANDROID_NDK_VERSION}" "cmake;${CMAKE_VERSION}" >/dev/null 2>&1 || true
-    - name: 4. Limpieza
-      run: rm -rf app-project temp_stormlib && mkdir -p app-project/jni/src app-project/app/libs
-    - name: 5. Dependencias
-      run: |
-        unzip -q stormlib.zip -d temp_stormlib
-        ITEMS=(temp_stormlib/*)
-        if [ "${#ITEMS[@]}" -eq 1 ] && [ -d "${ITEMS}" ]; then cp -a "${ITEMS}/." app-project/jni/stormlib/; else cp -a temp_stormlib/. app-project/jni/stormlib/; fi
-        rm -rf temp_stormlib
-        cp SDL3-3.4.18.aar app-project/app/libs/
-    - name: 6. Main.cpp
-      run: |
-        cat << 'EOF' > app-project/jni/src/main.cpp
-        #include <SDL3/SDL.h>
-        #include <SDL3/SDL_main.h>
-        struct VirtualJoystick { float x,y,radius; bool active; float dx,dy; };
-        struct VirtualButton { float x,y,radius; int actionId; bool pressed; };
-        static VirtualJoystick movementJoystick = { 250.0f, 800.0f, 90.0f, false, 0.0f, 0.0f };
-        static VirtualButton actionButtons = { {1650.0f,800.0f,80.0f,1,false}, {1480.0f,850.0f,55.0f,2,false}, {1700.0f,630.0f,55.0f,3,false} };
-        int main(int argc, char* argv[]) {
-            (void)argc; (void)argv;
-            if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) return -1;
-            SDL_Window* window = SDL_CreateWindow("WoW 3.3.5a Android", 1920, 1080, SDL_WINDOW_FULLSCREEN);
-            if (!window) { SDL_Quit(); return -2; }
-            SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
-            if (!renderer) { SDL_DestroyWindow(window); SDL_Quit(); return -3; }
-            bool isRunning = true; SDL_Event event;
-            while (isRunning) {
-                while (SDL_PollEvent(&event)) { if (event.type == SDL_EVENT_QUIT) isRunning = false; }
-                SDL_SetRenderDrawColor(renderer, 15, 15, 15, 255);
-                SDL_RenderClear(renderer);
-                SDL_RenderPresent(renderer);
-            }
-            SDL_DestroyRenderer(renderer); SDL_DestroyWindow(window); SDL_Quit(); return 0;
-        }
-        EOF
-    - name: 7. CMakeLists
-      run: |
-        cat << 'EOF' > app-project/jni/CMakeLists.txt
-        cmake_minimum_required(VERSION 3.22.1)
-        project(WoWAndroidEngine LANGUAGES C CXX)
-        set(STORM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-        set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-        set(STORM_USE_BUNDLED_LIBRARIES ON CACHE BOOL "" FORCE)
-        add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/stormlib ${CMAKE_CURRENT_BINARY_DIR}/stormlib)
-        find_package(SDL3 REQUIRED CONFIG)
-        add_library(main SHARED src/main.cpp)
-        if(TARGET storm)
-            set(STORM_TARGET storm)
-        elseif(TARGET stormlib)
-            set(STORM_TARGET stormlib)
-        endif()
-        find_library(LOG_L log) find_library(GLES_L GLESv3) find_library(AND_L android)
-        target_link_libraries(main PRIVATE SDL3::SDL3 ${STORM_TARGET} ${LOG_L} ${GLES_L} ${AND_L})
-        target_compile_definitions(main PRIVATE STORMLIB_NO_AUTO_LINK)
-        EOF
-    - name: 8. Android Build (Manifest y Gradle)
-      run: |
-        mkdir -p app-project/app/src/main
-        cat << 'EOF' > app-project/app/src/main/AndroidManifest.xml
-        <?xml version="1.0" encoding="utf-8"?>
-        <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-            <application android:allowBackup="false" android:label="WoW 3.3.5a Android" android:supportsRtl="true">
-                <activity android:name="org.libsdl.app.SDLActivity" android:screenOrientation="landscape" android:configChanges="orientation|screenSize|keyboardHidden|keyboard" android:exported="true">
-                    <intent-filter>
-                        <action android:name="android.intent.action.MAIN" />
-                        <category android:name="android.intent.category.LAUNCHER" />
-                    </intent-filter>
-                </activity>
-            </application>
-        </manifest>
-        EOF
-        cat << 'EOF' > app-project/build.gradle
-        buildscript {
-            repositories { google() ; mavenCentral() }
-            dependencies { classpath 'com.android.tools.build:gradle:8.1.1' }
-        }
-        allprojects { repositories { google() ; mavenCentral() } }
-        EOF
-        echo "include ':app'" > app-project/settings.gradle
-        cat << 'EOF' > app-project/app/build.gradle
-        plugins { id 'com.android.application' }
-        android {
-            namespace 'com.zero.wowmobile'
-            compileSdk 35
-            ndkVersion "28.2.13676358"
-            defaultConfig {
-                applicationId "com.zero.wowmobile"
-                minSdk 26
-                targetSdk 35
-                ndk { abiFilters 'arm64-v8a' }
-                externalNativeBuild { cmake { cppFlags "-std=c++17" } }
-            }
-            buildFeatures { prefab true }
-            externalNativeBuild { 
-                cmake { 
-                    path file("../jni/CMakeLists.txt") 
-                    version "3.31.5" 
-                } 
-            }
-            packaging { jniLibs { useLegacyPackaging true } }
-            buildTypes {
-                release {
-                    minifyEnabled false
-                    signingConfig signingConfigs.debug
-                }
-            }
-        }
-        dependencies { implementation files('libs/SDL3-3.4.18.aar') }
-        EOF
-    - name: 9. Configurar Gradle
-      uses: gradle/actions/setup-gradle@v4
-      with:
-        gradle-version: "8.2"
-        cache-disabled: true
-    - name: 10. Compilar
-      run: |
-        cd app-project
-        export ANDROID_HOME="${ANDROID_SDK_ROOT}"
-        gradle --no-daemon clean assembleRelease
-    - name: 11. Subir APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: wow-3.3.5a-android-apk
-        path: app-project/app/build/outputs/apk/release/app-release.apk
-        if-no-files-found: error
+
+      # ============================================================
+      # 1. CHECKOUT
+      # ============================================================
+      - name: 1. Checkout
+        uses: actions/checkout@v4
+
+      # ============================================================
+      # 2. JAVA
+      # ============================================================
+      - name: 2. Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # ============================================================
+      # 3. ANDROID TOOLCHAIN
+      # ============================================================
+      - name: 3. Toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=============================================="
+          echo "ANDROID TOOLCHAIN"
+          echo "=============================================="
+
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME}}"
+          SDKMANAGER="${SDK}/cmdline-tools/latest/bin/sdkmanager"
+
+          if [ ! -x "${SDKMANAGER}" ]; then
+            echo "ERROR: sdkmanager not found:"
+            echo "${SDKMANAGER}"
+            exit 1
+          fi
+
+          echo "SDK: ${SDK}"
+          echo "sdkmanager: ${SDKMANAGER}"
+
+          yes | "${SDKMANAGER}" --licenses >/dev/null
+
+          "${SDKMANAGER}" \
+            "platform-tools" \
+            "platforms;android-${ANDROID_COMPILE_SDK}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}" \
+            "ndk;${ANDROID_NDK_VERSION}" \
+            "cmake;${CMAKE_VERSION}"
+
+          echo
+          echo "Installed SDK components:"
+          "${SDKMANAGER}" --list_installed || true
+
+      # ============================================================
+      # 4. CLEAN
+      # ============================================================
+      - name: 4. Limpieza
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf app-project
+          rm -rf temp_stormlib
+
+          mkdir -p \
+            app-project/jni/src \
+            app-project/app/libs \
+            app-project/app/src/main
+
+      # ============================================================
+      # 5. DEPENDENCIES
+      # ============================================================
+      - name: 5. Dependencias
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=============================================="
+          echo "DEPENDENCIES"
+          echo "=============================================="
+
+          if [ ! -f stormlib.zip ]; then
+            echo "ERROR: stormlib.zip not found."
+            exit 1
+          fi
+
+          if [ ! -f SDL3-3.4.18.aar ]; then
+            echo "ERROR: SDL3-3.4.18.aar not found."
+            exit 1
+          fi
+
+          mkdir -p temp_stormlib
+          mkdir -p app-project/jni/stormlib
+
+          unzip -q stormlib.zip -d temp_stormlib
+
+          shopt -s dotglob nullglob
+          ITEMS=(temp_stormlib/*)
+
+          if [ "${#ITEMS[@]}" -eq 1 ] && [ -d "${ITEMS[0]}" ]; then
+            cp -a "${ITEMS[0]}"/. app-project/jni/stormlib/
+          else
+            cp -a temp_stormlib/. app-project/jni/stormlib/
+          fi
+
+          rm -rf temp_stormlib
+
+          cp SDL3-3.4.18.aar app-project/app/libs/SDL3-3.4.18.aar
+
+          echo
+          echo "StormLib:"
+          find app-project/jni/stormlib -maxdepth 2 -type f | head -100 || true
+
+          echo
+          echo "SDL3:"
+          ls -lh app-project/app/libs/SDL3-3.4.18.aar
+
+      # ============================================================
+      # 6. MAIN.CPP
+      # ============================================================
+      - name: 6. Main.cpp
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat << 'EOF' > app-project/jni/src/main.cpp
+          #include <SDL3/SDL.h>
+          #include <SDL3/SDL_main.h>
+
+          struct VirtualJoystick
+          {
+              float x;
+              float y;
+              float radius;
+              bool active;
+              float dx;
+              float dy;
+          };
+
+          struct VirtualButton
+          {
+              float x;
+              float y;
+              float radius;
+              int actionId;
+              bool pressed;
+          };
+
+          static VirtualJoystick movementJoystick =
+          {
+              250.0f,
+              800.0f,
+              90.0f,
+              false,
+              0.0f,
+              0.0f
+          };
+
+          static VirtualButton actionButton1 =
+          {
+              1650.0f,
+              800.0f,
+              80.0f,
+              1,
+              false
+          };
+
+          static VirtualButton actionButton2 =
+          {
+              1480.0f,
+              850.0f,
+              55.0f,
+              2,
+              false
+          };
+
+          static VirtualButton actionButton3 =
+          {
+              1700.0f,
+              630.0f,
+              55.0f,
+              3,
+              false
+          };
+
+          int main(int argc, char* argv[])
+          {
+              (void)argc;
+              (void)argv;
+
+              if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS))
+              {
+                  return -1;
+              }
+
+              SDL_Window* window =
+                  SDL_CreateWindow(
+                      "WoW 3.3.5a Android",
+                      1920,
+                      1080,
+                      SDL_WINDOW_FULLSCREEN
+                  );
+
+              if (!window)
+              {
+                  SDL_Quit();
+                  return -2;
+              }
+
+              SDL_Renderer* renderer =
+                  SDL_CreateRenderer(window, nullptr);
+
+              if (!renderer)
+              {
+                  SDL_DestroyWindow(window);
+                  SDL_Quit();
+                  return -3;
+              }
+
+              bool isRunning = true;
+              SDL_Event event;
+
+              while (isRunning)
+              {
+                  while (SDL_PollEvent(&event))
+                  {
+                      if (event.type == SDL_EVENT_QUIT)
+                      {
+                          isRunning = false;
+                      }
+                  }
+
+                  SDL_SetRenderDrawColor(
+                      renderer,
+                      15,
+                      15,
+                      15,
+                      255
+                  );
+
+                  SDL_RenderClear(renderer);
+
+                  SDL_RenderPresent(renderer);
+              }
+
+              SDL_DestroyRenderer(renderer);
+              SDL_DestroyWindow(window);
+              SDL_Quit();
+
+              return 0;
+          }
+          EOF
+
+          echo "main.cpp created:"
+          wc -l app-project/jni/src/main.cpp
+
+      # ============================================================
+      # 7. CMAKE
+      # ============================================================
+      - name: 7. CMakeLists
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat << 'EOF' > app-project/jni/CMakeLists.txt
+
+          cmake_minimum_required(VERSION 3.22.1)
+
+          project(
+              WoWAndroidEngine
+              LANGUAGES C CXX
+          )
+
+          set(CMAKE_CXX_STANDARD 17)
+          set(CMAKE_CXX_STANDARD_REQUIRED ON)
+          set(CMAKE_CXX_EXTENSIONS OFF)
+
+          # --------------------------------------------------------
+          # StormLib
+          # --------------------------------------------------------
+
+          set(STORM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+          set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+          set(STORM_USE_BUNDLED_LIBRARIES ON CACHE BOOL "" FORCE)
+
+          if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/stormlib")
+              message(FATAL_ERROR
+                  "StormLib source directory not found."
+              )
+          endif()
+
+          add_subdirectory(
+              "${CMAKE_CURRENT_SOURCE_DIR}/stormlib"
+              "${CMAKE_CURRENT_BINARY_DIR}/stormlib"
+          )
+
+          # --------------------------------------------------------
+          # SDL3
+          # --------------------------------------------------------
+
+          find_package(SDL3 REQUIRED CONFIG)
+
+          # --------------------------------------------------------
+          # Native library
+          # --------------------------------------------------------
+
+          add_library(
+              main
+              SHARED
+              src/main.cpp
+          )
+
+          # --------------------------------------------------------
+          # Locate StormLib target
+          # --------------------------------------------------------
+
+          if(TARGET storm)
+              set(STORM_TARGET storm)
+          elseif(TARGET stormlib)
+              set(STORM_TARGET stormlib)
+          elseif(TARGET StormLib)
+              set(STORM_TARGET StormLib)
+          else()
+              message(FATAL_ERROR
+                  "StormLib target was not created by StormLib."
+              )
+          endif()
+
+          message(STATUS "Using StormLib target: ${STORM_TARGET}")
+
+          # --------------------------------------------------------
+          # Android libraries
+          # --------------------------------------------------------
+
+          find_library(
+              LOG_L
+              log
+          )
+
+          find_library(
+              GLES_L
+              GLESv3
+          )
+
+          find_library(
+              AND_L
+              android
+          )
+
+          if(NOT LOG_L)
+              message(FATAL_ERROR "Android log library not found.")
+          endif()
+
+          if(NOT GLES_L)
+              message(FATAL_ERROR "OpenGL ES 3 library not found.")
+          endif()
+
+          if(NOT AND_L)
+              message(FATAL_ERROR "Android native library not found.")
+          endif()
+
+          # --------------------------------------------------------
+          # Link
+          # --------------------------------------------------------
+
+          target_link_libraries(
+              main
+              PRIVATE
+              SDL3::SDL3
+              ${STORM_TARGET}
+              ${LOG_L}
+              ${GLES_L}
+              ${AND_L}
+          )
+
+          target_compile_definitions(
+              main
+              PRIVATE
+              STORMLIB_NO_AUTO_LINK
+          )
+
+          EOF
+
+          echo "CMakeLists.txt created:"
+          cat app-project/jni/CMakeLists.txt
+
+      # ============================================================
+      # 8. ANDROID BUILD FILES
+      # ============================================================
+      - name: 8. Android Build
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # --------------------------------------------------------
+          # AndroidManifest.xml
+          # --------------------------------------------------------
+
+          cat << 'EOF' > app-project/app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+
+          <manifest
+              xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <application
+                  android:allowBackup="false"
+                  android:label="WoW 3.3.5a Android"
+                  android:supportsRtl="true">
+
+                  <activity
+                      android:name="org.libsdl.app.SDLActivity"
+                      android:screenOrientation="landscape"
+                      android:configChanges="orientation|screenSize|keyboardHidden|keyboard"
+                      android:exported="true">
+
+                      <intent-filter>
+
+                          <action
+                              android:name="android.intent.action.MAIN" />
+
+                          <category
+                              android:name="android.intent.category.LAUNCHER" />
+
+                      </intent-filter>
+
+                  </activity>
+
+              </application>
+
+          </manifest>
+          EOF
+
+          # --------------------------------------------------------
+          # settings.gradle
+          # --------------------------------------------------------
+
+          cat << 'EOF' > app-project/settings.gradle
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "WoWAndroid"
+
+          include(":app")
+          EOF
+
+          # --------------------------------------------------------
+          # Root build.gradle
+          # --------------------------------------------------------
+
+          cat << 'EOF' > app-project/build.gradle
+          plugins {
+              id 'com.android.application' version '8.6.1' apply false
+          }
+          EOF
+
+          # --------------------------------------------------------
+          # App build.gradle
+          # --------------------------------------------------------
+
+          cat << 'EOF' > app-project/app/build.gradle
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+
+              namespace 'com.zero.wowmobile'
+
+              compileSdk 35
+
+              ndkVersion "28.2.13676358"
+
+              defaultConfig {
+
+                  applicationId "com.zero.wowmobile"
+
+                  minSdk 26
+
+                  targetSdk 35
+
+                  versionCode 1
+
+                  versionName "1.0"
+
+                  ndk {
+                      abiFilters 'arm64-v8a'
+                  }
+
+                  externalNativeBuild {
+                      cmake {
+                          cppFlags "-std=c++17"
+                      }
+                  }
+              }
+
+              buildFeatures {
+                  prefab true
+              }
+
+              externalNativeBuild {
+
+                  cmake {
+
+                      path file("../jni/CMakeLists.txt")
+
+                      version "3.31.5"
+                  }
+              }
+
+              packaging {
+
+                  jniLibs {
+
+                      useLegacyPackaging true
+                  }
+              }
+
+              buildTypes {
+
+                  release {
+
+                      minifyEnabled false
+
+                      shrinkResources false
+
+                      signingConfig signingConfigs.debug
+                  }
+              }
+          }
+
+          dependencies {
+
+              implementation files(
+                  'libs/SDL3-3.4.18.aar'
+              )
+          }
+          EOF
+
+          echo "Android project generated."
+
+      # ============================================================
+      # 9. GRADLE
+      # ============================================================
+      - name: 9. Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+          cache-disabled: true
+
+      # ============================================================
+      # 10. VERIFY PROJECT
+      # ============================================================
+      - name: 10. Verificar proyecto
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=============================================="
+          echo "VERIFY PROJECT"
+          echo "=============================================="
+
+          echo
+          echo "Android project:"
+          find app-project -maxdepth 4 -type f | sort
+
+          echo
+          echo "CMake:"
+          sed -n '1,240p' app-project/jni/CMakeLists.txt
+
+          echo
+          echo "Gradle:"
+          sed -n '1,240p' app-project/app/build.gradle
+
+      # ============================================================
+      # 11. COMPILE
+      # ============================================================
+      - name: 11. Compilar
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=============================================="
+          echo "BUILD WoW 3.3.5a ANDROID"
+          echo "=============================================="
+
+          cd app-project
+
+          export ANDROID_HOME="${ANDROID_SDK_ROOT:-${ANDROID_HOME}}"
+
+          echo "ANDROID_HOME=${ANDROID_HOME}"
+
+          gradle \
+            --no-daemon \
+            --stacktrace \
+            --info \
+            clean \
+            assembleRelease
+
+      # ============================================================
+      # 12. VERIFY APK
+      # ============================================================
+      - name: 12. Verificar APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK="app-project/app/build/outputs/apk/release/app-release.apk"
+
+          echo "=============================================="
+          echo "VERIFY APK"
+          echo "=============================================="
+
+          if [ ! -f "${APK}" ]; then
+              echo "ERROR: APK was not generated."
+              exit 1
+          fi
+
+          echo
+          echo "APK:"
+          ls -lh "${APK}"
+
+          echo
+          echo "APK type:"
+          file "${APK}"
+
+          echo
+          echo "APK contents:"
+          unzip -l "${APK}" | head -100
+
+      # ============================================================
+      # 13. UPLOAD APK
+      # ============================================================
+      - name: 13. Subir APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: wow-3.3.5a-android-apk
+          path: app-project/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
