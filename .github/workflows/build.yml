@@ -1,49 +1,55 @@
 name: Build Full WoW Android Engine
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Permite ejecutar el script con un clic desde la web de GitHub
 
 jobs:
   build-everything:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Minimal Repository
+    - name: 1. Descargar el Código de tu Repositorio
       uses: actions/checkout@v4
 
-    # Usamos la instalación nativa preinstalada en GitHub Actions para evitar el error de 'tools'
-    - name: Set up Java Development Kit (JDK 17)
+    - name: Configurar entorno de Java (JDK 17)
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: 1. Descargar Dependencias Oficiales C++
+    - name: 2. Descomprimir StormLib Local y Obtener SDL2
       run: |
         mkdir -p app-project/jni/src
         
-        # Descarga SDL2 original para la ventana gráfica en móviles
-        wget https://github.com
-        tar -xzf SDL2-2.28.5.tar.gz && mv SDL2-2.28.5 app-project/jni/SDL
+        # Clonamos de manera ultra ligera únicamente el código fuente C++ de SDL2
+        git clone --depth 1 --branch release-2.28.x https://github.com app-project/jni/SDL
+        
+        # Buscamos tu archivo stormlib.zip en la raíz y lo extraemos en el lugar correcto
+        if [ -f "stormlib.zip" ]; then
+          unzip stormlib.zip -d temp_stormlib
+          # Movemos el contenido sin importar si venía dentro de otra subcarpeta
+          mv temp_stormlib/* app-project/jni/stormlib
+          rm -rf temp_stormlib
+        else
+          echo "ERROR: No se encontró el archivo stormlib.zip en la raíz de tu repositorio"
+          exit 1
+        fi
 
-        # Descarga StormLib original para leer los archivos .MPQ de la 3.3.5a
-        wget https://github.com -O stormlib.zip
-        unzip stormlib.zip && mv StormLib-master app-project/jni/stormlib
-
-    - name: 2. Crear Código Fuente C++ (Controles Inteligentes Táctiles)
+    - name: 3. Auto-Generar el Código del Juego (Controles Inteligentes Táctiles)
       run: |
         cat << 'EOF' > app-project/jni/src/main.cpp
         #include <SDL.h>
         #include <string>
 
+        // Estructuras para los controles nativos de Android (Pocos botones)
         struct VirtualJoystick { float x, y, radius; bool active; float dx, dy; };
         struct VirtualButton { float x, y, radius; int actionId; bool pressed; };
 
         VirtualJoystick movementJoystick = { 250.0f, 800.0f, 90.0f, false, 0.0f, 0.0f };
         VirtualButton actionButtons = {
-            { 1650.0f, 800.0f, 80.0f, 1, false }, 
-            { 1480.0f, 850.0f, 55.0f, 2, false }, 
-            { 1700.0f, 630.0f, 55.0f, 3, false }  
+            { 1650.0f, 800.0f, 80.0f, 1, false }, // Ataque básico / Interacción inteligente
+            { 1480.0f, 850.0f, 55.0f, 2, false }, // Habilidad 1 (Smart Targeting automático)
+            { 1700.0f, 630.0f, 55.0f, 3, false }  // Habilidad 2 (Smart Targeting automático)
         };
 
         int main(int argc, char* argv[]) {
@@ -53,6 +59,7 @@ jobs:
                 SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 1920, 1080, SDL_WINDOW_FULLSCREEN);
             SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
 
+            // Ruta en tu celular donde lee la carpeta Data original de PC de forma externa
             std::string externalMpqPath = "/sdcard/Android/data/com.zero.wowmobile/files/Data/";
 
             bool isRunning = true;
@@ -66,6 +73,7 @@ jobs:
                         float touchX = event.tfinger.x * 1920;
                         float touchY = event.tfinger.y * 1080;
 
+                        // Lógica del Joystick izquierdo nativo (Movimiento 360)
                         float distJS = (touchX - movementJoystick.x)*(touchX - movementJoystick.x) + (touchY - movementJoystick.y)*(touchY - movementJoystick.y);
                         if (distJS < (movementJoystick.radius * movementJoystick.radius)) {
                             movementJoystick.active = true;
@@ -73,6 +81,7 @@ jobs:
                             movementJoystick.dy = (touchY - movementJoystick.y) / movementJoystick.radius;
                         }
 
+                        // Lógica de los botones de acción con auto-apuntado
                         for (int i = 0; i < 3; i++) {
                             float distBtn = (touchX - actionButtons[i].x)*(touchX - actionButtons[i].x) + (touchY - actionButtons[i].y)*(touchY - actionButtons[i].y);
                             if (distBtn < (actionButtons[i].radius * actionButtons[i].radius)) {
@@ -98,10 +107,8 @@ jobs:
             return 0;
         }
         EOF
-        
-        echo "" > app-project/jni/src/mpq_loader.h
 
-    - name: 3. Generar Configuración CMake de Compilación
+    - name: 4. Auto-Generar Enlace de Compilación CMake
       run: |
         cat << 'EOF' > app-project/jni/CMakeLists.txt
         cmake_minimum_required(VERSION 3.22.1)
@@ -109,6 +116,7 @@ jobs:
 
         set(CMAKE_CXX_STANDARD 17)
 
+        # Compilar SDL y tu StormLib local descompreso
         add_subdirectory(SDL)
         add_subdirectory(stormlib)
 
@@ -126,10 +134,11 @@ jobs:
         )
         EOF
 
-    - name: 4. Generar Entorno Completo Android Gradle & Manifiesto
+    - name: 5. Auto-Generar Entorno Android Gradle y Manifiesto de Permisos
       run: |
         mkdir -p app-project/app/src/main
         
+        # Manifiesto de Android con permisos para leer la carpeta externa /Data/ sin empaquetar nada
         cat << 'EOF' > app-project/app/src/main/AndroidManifest.xml
         <?xml version="1.0" encoding="utf-8"?>
         <manifest xmlns:android="http://microsoft.com" package="com.zero.wowmobile">
@@ -173,16 +182,15 @@ jobs:
 
         echo "include ':app'" > app-project/settings.gradle
 
-    - name: 5. Compilar la Aplicación Nativa y Generar APK
+    - name: 6. Compilar Todo y Generar APK Ejecutable
       run: |
         cd app-project
-        # Usamos las rutas preconfiguradas del sistema para compilar de forma limpia
         export ANDROID_HOME=$ANDROID_SDK_ROOT
         gradle wrapper --gradle-version 8.1.1
         chmod +x gradlew
         ./gradlew assembleRelease
 
-    - name: 6. Subir el APK compilado como Artefacto
+    - name: 7. Subir APK a GitHub como archivo de descarga
       uses: actions/upload-artifact@v4
       with:
         name: wow-3.3.5a-android-apk
