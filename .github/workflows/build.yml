@@ -193,7 +193,7 @@ jobs:
             externalNativeBuild { cmake { path "../jni/CMakeLists.txt" } }
         }
         dependencies {
-            # Vinculamos la librería SDL3 local que guardamos en la carpeta libs
+            // Vinculamos la librería SDL3 local que guardamos en la carpeta libs
             implementation fileTree(dir: 'libs', include: ['**/*.aar'])
         }
         EOF
