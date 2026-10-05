@@ -83,7 +83,7 @@ jobs:
         mkdir -p app-project/app/src/main
         cat << 'EOF' > app-project/app/src/main/AndroidManifest.xml
         <?xml version="1.0" encoding="utf-8"?>
-        <manifest xmlns:android="http://android.com">
+        <manifest xmlns:android="http://schemas.android.com/apk/res/android">
             <application android:allowBackup="false" android:label="WoW 3.3.5a Android" android:supportsRtl="true">
                 <activity android:name="org.libsdl.app.SDLActivity" android:screenOrientation="landscape" android:configChanges="orientation|screenSize|keyboardHidden|keyboard" android:exported="true">
                     <intent-filter>
