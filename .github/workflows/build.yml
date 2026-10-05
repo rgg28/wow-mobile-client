@@ -147,10 +147,10 @@ jobs:
       run: |
         mkdir -p app-project/app/src/main
         
-        # Manifiesto de Android con permisos corregidos
+        # Manifiesto de Android con el esquema URL oficial correcto de Google
         cat << 'EOF' > app-project/app/src/main/AndroidManifest.xml
         <?xml version="1.0" encoding="utf-8"?>
-        <manifest xmlns:android="http://android.com" package="com.zero.wowmobile">
+        <manifest xmlns:android="http://android.com">
             <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
             <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
             <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
@@ -202,13 +202,12 @@ jobs:
     - name: 6. Configurar e Inyectar Gradle 8.2 de forma Segura
       uses: gradle/actions/setup-gradle@v4
       with:
-        gradle-version: '8.2' # Fuerza el entorno exacto saltándose el Gradle 9 del sistema
+        gradle-version: '8.2'
 
     - name: 7. Compilar Todo y Generar APK Ejecutable
       run: |
         cd app-project
         export ANDROID_HOME=$ANDROID_SDK_ROOT
-        # Usamos el binario de Gradle inyectado de forma directa
         gradle assembleRelease
 
     - name: 8. Subir APK a GitHub como archivo de descarga
