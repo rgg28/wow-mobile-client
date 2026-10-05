@@ -40,7 +40,7 @@ jobs:
         struct VirtualJoystick { float x,y,radius; bool active; float dx,dy; };
         struct VirtualButton { float x,y,radius; int actionId; bool pressed; };
         static VirtualJoystick movementJoystick = { 250.0f, 800.0f, 90.0f, false, 0.0f, 0.0f };
-        static VirtualButton actionButtons[3] = { {1650.0f,800.0f,80.0f,1,false}, {1480.0f,850.0f,55.0f,2,false}, {1700.0f,630.0f,55.0f,3,false} };
+        static VirtualButton actionButtons = { {1650.0f,800.0f,80.0f,1,false}, {1480.0f,850.0f,55.0f,2,false}, {1700.0f,630.0f,55.0f,3,false} };
         int main(int argc, char* argv[]) {
             (void)argc; (void)argv;
             if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) return -1;
@@ -125,17 +125,17 @@ jobs:
         }
         dependencies { implementation files('libs/SDL3-3.4.18.aar') }
         EOF
-    - name: 9. Compilar
+    - name: 9. Configurar Gradle
       uses: gradle/actions/setup-gradle@v4
       with:
         gradle-version: "8.2"
         cache-disabled: true
-    - name: 10. Forzar Build
+    - name: 10. Compilar
       run: |
         cd app-project
         export ANDROID_HOME="${ANDROID_SDK_ROOT}"
-        ./gradlew --no-daemon clean assembleRelease
-    - name: 11. Subir APK Firmada
+        gradle --no-daemon clean assembleRelease
+    - name: 11. Subir APK
       uses: actions/upload-artifact@v4
       with:
         name: wow-3.3.5a-android-apk
