@@ -17,7 +17,13 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: 2. Descomprimir StormLib Local y Preparar Estructuras
+    - name: 2. Limpieza Absoluta de Archivos Rotos y Caché
+      run: |
+        # Forzamos la eliminación de cualquier carpeta previa para evitar conflictos de caché
+        rm -rf app-project
+        rm -rf temp_stormlib
+
+    - name: 3. Descomprimir StormLib Local y Preparar Estructuras
       run: |
         mkdir -p app-project/jni/src
         mkdir -p app-project/app/libs
@@ -42,7 +48,7 @@ jobs:
           exit 1
         fi
 
-    - name: 3. Auto-Generar el Código del Juego (Controles Inteligentes Táctiles SDL3)
+    - name: 4. Auto-Generar el Código del Juego (Controles Inteligentes Táctiles SDL3)
       run: |
         cat << 'EOF' > app-project/jni/src/main.cpp
         #include <SDL3/SDL.h>
@@ -115,7 +121,7 @@ jobs:
         }
         EOF
 
-    - name: 4. Auto-Generar Enlace de Compilación CMake (Sin compilar SDL desde fuente)
+    - name: 5. Auto-Generar Enlace de Compilación CMake (Sin compilar SDL desde fuente)
       run: |
         cat << 'EOF' > app-project/jni/CMakeLists.txt
         cmake_minimum_required(VERSION 3.22.1)
@@ -143,17 +149,17 @@ jobs:
         )
         EOF
 
-    - name: 5. Auto-Generar Entorno Android Gradle y Manifiesto de Permisos
+    - name: 6. Auto-Generar Entorno Android Gradle y Manifiesto de Permisos
       run: |
         mkdir -p app-project/app/src/main
         
-        # Manifiesto de Android con el esquema URL oficial correcto de Google
+        # Manifiesto de Android con el esquema URL oficial correcto de Google estructurado limpiamente
         cat << 'EOF' > app-project/app/src/main/AndroidManifest.xml
         <?xml version="1.0" encoding="utf-8"?>
         <manifest xmlns:android="http://android.com">
             <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
             <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
-            <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+            <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
             <application android:label="WoW 3.3.5a Android Engine" android:hasCode="true">
                 <activity android:name="org.libsdl.app.SDLActivity" android:screenOrientation="landscape" android:exported="true">
                     <intent-filter>
@@ -199,18 +205,19 @@ jobs:
 
         echo "include ':app'" > app-project/settings.gradle
 
-    - name: 6. Configurar e Inyectar Gradle 8.2 de forma Segura
+    - name: 7. Configurar e Inyectar Gradle 8.2 de forma Segura (Ignorando Caché Vieja)
       uses: gradle/actions/setup-gradle@v4
       with:
         gradle-version: '8.2'
+        cache-disabled: true # Forzamos a desactivar lecturas corruptas de la compilación previa
 
-    - name: 7. Compilar Todo y Generar APK Ejecutable
+    - name: 8. Compilar Todo y Generar APK Ejecutable
       run: |
         cd app-project
         export ANDROID_HOME=$ANDROID_SDK_ROOT
-        gradle assembleRelease
+        gradle clean assembleRelease # El comando 'clean' purga las estructuras nativas guardadas
 
-    - name: 8. Subir APK a GitHub como archivo de descarga
+    - name: 9. Subir APK a GitHub como archivo de descarga
       uses: actions/upload-artifact@v4
       with:
         name: wow-3.3.5a-android-apk
