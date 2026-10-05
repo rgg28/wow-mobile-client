@@ -143,7 +143,7 @@ jobs:
         )
         EOF
 
-    - name: 5. Auto-Generar Entorno Android Gradle y Manifiesto de Permisos (Sintaxis Universal)
+    - name: 5. Auto-Generar Entorno Android Gradle y Manifiesto de Permisos
       run: |
         mkdir -p app-project/app/src/main
         
@@ -193,26 +193,23 @@ jobs:
             externalNativeBuild { cmake { path "../jni/CMakeLists.txt" } }
         }
         dependencies {
-            // Sintaxis explícita y directa: Soluciona el error estructural en Gradle 9 y Gradle 8
             implementation files('libs/SDL3-3.4.18.aar')
         }
         EOF
 
         echo "include ':app'" > app-project/settings.gradle
 
-    - name: 6. Inicializar y Forzar Entorno Local Aislado de Gradle
-      run: |
-        cd app-project
-        # Generamos los scripts locales de Gradle Wrapper de forma forzada
-        gradle wrapper --gradle-version 8.1.1
-        chmod +x gradlew
+    - name: 6. Configurar e Inyectar Gradle 8.2 de forma Segura
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        gradle-version: '8.2' # Fuerza el entorno exacto saltándose el Gradle 9 del sistema
 
     - name: 7. Compilar Todo y Generar APK Ejecutable
       run: |
         cd app-project
         export ANDROID_HOME=$ANDROID_SDK_ROOT
-        # Se ejecuta mediante el binario local aislado de tu carpeta para no tocar el sistema global
-        ./gradlew assembleRelease --no-daemon
+        # Usamos el binario de Gradle inyectado de forma directa
+        gradle assembleRelease
 
     - name: 8. Subir APK a GitHub como archivo de descarga
       uses: actions/upload-artifact@v4
