@@ -54,7 +54,7 @@ jobs:
         struct VirtualButton { float x, y, radius; int actionId; bool pressed; };
 
         VirtualJoystick movementJoystick = { 250.0f, 800.0f, 90.0f, false, 0.0f, 0.0f };
-        VirtualButton actionButtons[3] = {
+        VirtualButton actionButtons = {
             { 1650.0f, 800.0f, 80.0f, 1, false }, // Ataque básico / Interacción inteligente
             { 1480.0f, 850.0f, 55.0f, 2, false }, // Habilidad 1 (Smart Targeting automático)
             { 1700.0f, 630.0f, 55.0f, 3, false }  // Habilidad 2 (Smart Targeting automático)
@@ -200,15 +200,21 @@ jobs:
 
         echo "include ':app'" > app-project/settings.gradle
 
-    - name: 6. Compilar Todo y Generar APK Ejecutable
+    - name: 6. Configurar el Wrapper de Gradle Correcto
+      run: |
+        cd app-project
+        # Usamos una versión de Gradle (8.2) perfectamente compatible con el plugin de Android 8.1.1
+        gradle wrapper --gradle-version 8.2 --distribution-type bin
+        chmod +x gradlew
+
+    - name: 7. Compilar Todo y Generar APK Ejecutable
       run: |
         cd app-project
         export ANDROID_HOME=$ANDROID_SDK_ROOT
-        gradle wrapper --gradle-version 8.1.1
-        chmod +x gradlew
+        # CRUCIAL: Usamos obligatoriamente './gradlew' para ignorar la versión 9.8.0 del sistema
         ./gradlew assembleRelease
 
-    - name: 7. Subir APK a GitHub como archivo de descarga
+    - name: 8. Subir APK a GitHub como archivo de descarga
       uses: actions/upload-artifact@v4
       with:
         name: wow-3.3.5a-android-apk
