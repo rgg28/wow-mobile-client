@@ -17,28 +17,36 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: 2. Descomprimir StormLib Local y Obtener SDL2
+    - name: 2. Descomprimir StormLib Local y Preparar Estructuras
       run: |
         mkdir -p app-project/jni/src
-        
-        # Clonamos de manera ultra ligera únicamente el código fuente C++ de SDL2
-        git clone --depth 1 --branch release-2.28.x https://github.com app-project/jni/SDL
+        mkdir -p app-project/app/libs
         
         # Buscamos tu archivo stormlib.zip en la raíz y lo extraemos en el lugar correcto
         if [ -f "stormlib.zip" ]; then
           unzip stormlib.zip -d temp_stormlib
-          # Movemos el contenido sin importar si venía dentro de otra subcarpeta
-          mv temp_stormlib/* app-project/jni/stormlib
+          # Creamos la carpeta final respetando el nombre exacto usado en CMake
+          mkdir -p app-project/jni/stormlib
+          mv temp_stormlib/* app-project/jni/stormlib/
           rm -rf temp_stormlib
         else
           echo "ERROR: No se encontró el archivo stormlib.zip en la raíz de tu repositorio"
           exit 1
         fi
 
-    - name: 3. Auto-Generar el Código del Juego (Controles Inteligentes Táctiles)
+        # Movemos tu archivo AAR de SDL3 a la carpeta de librerías de la App de Android
+        if [ -f "SDL3-3.4.18.aar" ]; then
+          cp SDL3-3.4.18.aar app-project/app/libs/
+        else
+          echo "ERROR: No se encontró el archivo SDL3-3.4.18.aar en la raíz de tu repositorio"
+          exit 1
+        fi
+
+    - name: 3. Auto-Generar el Código del Juego (Controles Inteligentes Táctiles SDL3)
       run: |
         cat << 'EOF' > app-project/jni/src/main.cpp
-        #include <SDL.h>
+        #include <SDL3/SDL.h>
+        #include <SDL3/SDL_main.h>
         #include <string>
 
         // Estructuras para los controles nativos de Android (Pocos botones)
@@ -46,18 +54,17 @@ jobs:
         struct VirtualButton { float x, y, radius; int actionId; bool pressed; };
 
         VirtualJoystick movementJoystick = { 250.0f, 800.0f, 90.0f, false, 0.0f, 0.0f };
-        VirtualButton actionButtons = {
+        VirtualButton actionButtons[3] = {
             { 1650.0f, 800.0f, 80.0f, 1, false }, // Ataque básico / Interacción inteligente
             { 1480.0f, 850.0f, 55.0f, 2, false }, // Habilidad 1 (Smart Targeting automático)
             { 1700.0f, 630.0f, 55.0f, 3, false }  // Habilidad 2 (Smart Targeting automático)
         };
 
         int main(int argc, char* argv[]) {
-            if (SDL_Init(SDL_INIT_VIDEO) < 0) return -1;
+            if (!SDL_Init(SDL_INIT_VIDEO)) return -1;
 
-            SDL_Window* window = SDL_CreateWindow("WoW 3.3.5a Android Zero", 
-                SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 1920, 1080, SDL_WINDOW_FULLSCREEN);
-            SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+            SDL_Window* window = SDL_CreateWindow("WoW 3.3.5a Android Zero", 1920, 1080, SDL_WINDOW_FULLSCREEN);
+            SDL_Renderer* renderer = SDL_CreateRenderer(window, NULL);
 
             // Ruta en tu celular donde lee la carpeta Data original de PC de forma externa
             std::string externalMpqPath = "/sdcard/Android/data/com.zero.wowmobile/files/Data/";
@@ -67,9 +74,9 @@ jobs:
 
             while (isRunning) {
                 while (SDL_PollEvent(&event)) {
-                    if (event.type == SDL_QUIT) isRunning = false;
+                    if (event.type == SDL_EVENT_QUIT) isRunning = false;
 
-                    if (event.type == SDL_FINGERDOWN || event.type == SDL_FINGERMOTION) {
+                    if (event.type == SDL_EVENT_FINGER_DOWN || event.type == SDL_EVENT_FINGER_MOTION) {
                         float touchX = event.tfinger.x * 1920;
                         float touchY = event.tfinger.y * 1080;
 
@@ -89,7 +96,7 @@ jobs:
                             }
                         }
                     }
-                    if (event.type == SDL_FINGERUP) {
+                    if (event.type == SDL_EVENT_FINGER_UP) {
                         movementJoystick.active = false;
                         movementJoystick.dx = 0; movementJoystick.dy = 0;
                         for (int i = 0; i < 3; i++) actionButtons[i].pressed = false;
@@ -108,7 +115,7 @@ jobs:
         }
         EOF
 
-    - name: 4. Auto-Generar Enlace de Compilación CMake
+    - name: 4. Auto-Generar Enlace de Compilación CMake (Sin compilar SDL desde fuente)
       run: |
         cat << 'EOF' > app-project/jni/CMakeLists.txt
         cmake_minimum_required(VERSION 3.22.1)
@@ -116,17 +123,19 @@ jobs:
 
         set(CMAKE_CXX_STANDARD 17)
 
-        # Compilar SDL y tu StormLib local descompreso
-        add_subdirectory(SDL)
+        # Compilar únicamente tu StormLib local descompreso
         add_subdirectory(stormlib)
 
         find_library(ANDROID_LOG_LIB log)
         find_library(ANDROID_GLES_LIB GLESv3)
+        
+        # Localizar SDL3 por medio del paquete AAR inyectado por Gradle
+        find_package(SDL3 REQUIRED)
 
         add_library(wow_engine SHARED src/main.cpp)
 
         target_link_libraries(wow_engine
-            SDL2
+            SDL3::SDL3
             stormlib
             ${ANDROID_LOG_LIB}
             ${ANDROID_GLES_LIB}
@@ -138,14 +147,14 @@ jobs:
       run: |
         mkdir -p app-project/app/src/main
         
-        # Manifiesto de Android con permisos para leer la carpeta externa /Data/ sin empaquetar nada
+        # Manifiesto de Android con permisos corregidos
         cat << 'EOF' > app-project/app/src/main/AndroidManifest.xml
         <?xml version="1.0" encoding="utf-8"?>
-        <manifest xmlns:android="http://microsoft.com" package="com.zero.wowmobile">
+        <manifest xmlns:android="http://android.com" package="com.zero.wowmobile">
             <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
             <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
             <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-            <application android:label="WoW 3.3.5a Android Engine" android:hasCode="false">
+            <application android:label="WoW 3.3.5a Android Engine" android:hasCode="true">
                 <activity android:name="org.libsdl.app.SDLActivity" android:screenOrientation="landscape" android:exported="true">
                     <intent-filter>
                         <action android:name="android.intent.action.MAIN" />
@@ -174,9 +183,18 @@ jobs:
                 minSdk 26
                 targetSdk 33
                 ndk { abiFilters 'arm64-v8a' }
-                externalNativeBuild { cmake { cppFlags "-std=c++17" } }
+                externalNativeBuild { 
+                    cmake { 
+                        cppFlags "-std=c++17" 
+                        arguments "-DSDL3_DIR=${project.buildDir}/outputs/aar"
+                    } 
+                }
             }
             externalNativeBuild { cmake { path "../jni/CMakeLists.txt" } }
+        }
+        dependencies {
+            # Vinculamos la librería SDL3 local que guardamos en la carpeta libs
+            implementation fileTree(dir: 'libs', include: ['**/*.aar'])
         }
         EOF
 
