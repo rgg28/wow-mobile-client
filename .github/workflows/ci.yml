@@ -46,11 +46,19 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Configurar Android SDK y NDK
+      # === PARCHE DE PERMISOS: Soluciona el error EACCES creando el directorio con sudo ===
+      - name: Crear directorio de Android con permisos correctos
+        run: |
+          sudo mkdir -p /usr/local/lib/android
+          sudo chmod -R 777 /usr/local/lib/android
+
+      # === CONFIGURACIÓN DE ANDROID CORREGIDA: Usando los parámetros válidos de la v3 ===
+      - name: Configurar Android SDK y Herramientas
         uses: android-actions/setup-android@v3
         with:
-          api-level: 33
-          ndk-version: 25.2.9519653
+          cmdline-tools-version: 12266719 # Bota la última versión estable sin crashear
+          accept-android-sdk-licenses: true
+          packages: 'platforms;android-33 build-tools;33.0.2 ndk;25.2.9519653'
 
       - name: Toolchain de Rust (Lee rust-toolchain.toml extraido)
         run: |
