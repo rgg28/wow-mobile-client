@@ -34,8 +34,6 @@ jobs:
       - name: Extraer codigo fuente desde benilla.zip
         run: |
           unzip -q benilla.zip -d .
-          
-          # Si al descomprimir se crea la subcarpeta del proyecto, movemos todo afuera
           if [ -d "benilla-0.2.0" ]; then
             mv benilla-0.2.0/* .
           fi
@@ -46,36 +44,44 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # === PARCHE DE PERMISOS: Soluciona el error EACCES creando el directorio con sudo ===
       - name: Crear directorio de Android con permisos correctos
         run: |
           sudo mkdir -p /usr/local/lib/android
           sudo chmod -R 777 /usr/local/lib/android
 
-      # === CONFIGURACIÓN DE ANDROID CORREGIDA: Usando los parámetros válidos de la v3 ===
       - name: Configurar Android SDK y Herramientas
         uses: android-actions/setup-android@v3
         with:
-          cmdline-tools-version: 12266719 # Bota la última versión estable sin crashear
+          cmdline-tools-version: 12266719
           accept-android-sdk-licenses: true
           packages: 'platforms;android-33 build-tools;33.0.2 ndk;25.2.9519653'
 
-      - name: Toolchain de Rust (Lee rust-toolchain.toml extraido)
+      - name: Toolchain de Rust (Targets Móviles)
         run: |
           rustup toolchain install 1.98.1
           rustup target add aarch64-linux-android armv7-linux-androideabi
           rustc -V
 
-      - name: Instalar cargo-ndk
-        run: cargo install cargo-ndk
+      # === INSTALACIÓN DE LAS COMPONENTES MÓVILES ===
+      - name: Instalar cargo-ndk y cargo-apk
+        run: |
+          cargo install cargo-ndk
+          cargo install cargo-apk
 
-      - name: Compilar Binarios Android (Nuevos y Antiguos)
+      # === COMPILACIÓN Y EMPAQUETADO DEL APK ===
+      - name: Compilar y Empaquetar APK Completo
         run: |
           export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653
-          cargo ndk -t aarch64-linux-android -t armv7-linux-androideabi build --release
+          
+          # Forzamos a que arboard desactive las funciones de portapapeles de escritorio en la build móvil
+          export CARGO_FEATURE_ARBOARD=false
+          
+          # Compilamos y empaquetamos el APK ejecutable directo usando el contenedor de Bevy
+          cargo apk build --target aarch64-linux-android --release
 
-      - name: Subir Librerias de Android Compiladas
+      # === SUBIDA DEL INSTALADOR COMO ARTIFACT ===
+      - name: Subir APK de Android Final
         uses: actions/upload-artifact@v4
         with:
-          name: benilla-android-libs
-          path: target/
+          name: Benilla-WoW-Classic-Android-APK
+          path: target/config/release/apk/*.apk
