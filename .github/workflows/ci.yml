@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+      WOW_DATA: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - name: System libraries
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq pkg-config libasound2-dev libudev-dev
+
+      # === EXTRACCIÓN AUTOMÁTICA DE TU ARCHIVO ZIP ===
+      - name: Extraer codigo fuente desde benilla.zip
+        run: |
+          unzip -q benilla.zip -d .
+          
+          # Si al descomprimir se crea la subcarpeta del proyecto, movemos todo afuera
+          if [ -d "benilla-0.2.0" ]; then
+            mv benilla-0.2.0/* .
+          fi
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Configurar Android SDK y NDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 33
+          ndk-version: 25.2.9519653
+
+      - name: Toolchain de Rust (Lee rust-toolchain.toml extraido)
+        run: |
+          rustup toolchain install 1.98.1
+          rustup target add aarch64-linux-android armv7-linux-androideabi
+          rustc -V
+
+      - name: Instalar cargo-ndk
+        run: cargo install cargo-ndk
+
+      - name: Compilar Binarios Android (Nuevos y Antiguos)
+        run: |
+          export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653
+          cargo ndk -t aarch64-linux-android -t armv7-linux-androideabi build --release
+
+      - name: Subir Librerias de Android Compiladas
+        uses: actions/upload-artifact@v4
+        with:
+          name: benilla-android-libs
+          path: target/
