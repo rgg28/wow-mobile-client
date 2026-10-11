@@ -30,7 +30,7 @@ jobs:
           set -uo pipefail
           
           export ANDROID_HOME=/usr/local/lib/android/sdk
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROID_HOME=$ANDROID_ENV" >> $GITHUB_ENV
           
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           
@@ -62,7 +62,6 @@ jobs:
           if [ -f benilla.zip ]; then
             mkdir -p /tmp/benilla-source
             
-            # Extracción limpia mediante Python3
             python3 -c "import zipfile; zipfile.ZipFile('benilla.zip').extractall('/tmp/benilla-source')"
 
             echo "=== 📁 Estructura extraída internamente ==="
@@ -77,15 +76,26 @@ jobs:
 
             SOURCE_DIR="$(dirname "$ROOT")"
             rsync -a "$SOURCE_DIR/" .
+            
+            if [ -d "crates/benilla-app/src/textInput" ]; then
+              mv crates/benilla-app/src/textInput crates/benilla-app/src/textinput
+            fi
           else
             echo "::error::El archivo benilla.zip no fue detectado en la raíz del repositorio."
             exit 1
           fi
 
-          # Validaciones obligatorias de archivos
+          echo "=== 📁 Validando y forzando rutas de archivos ==="
+          CLIPBOARD_PATH=$(find crates/ -iname "clipboard.rs" -type f -print -quit)
+          
+          if [ -z "$CLIPBOARD_PATH" ]; then
+            echo "::error::No se encontró el archivo clipboard.rs en ninguna subcarpeta de crates/"
+            exit 1
+          fi
+
+          mkdir -p crates/benilla-app/src/textinput
           test -f Cargo.toml
           test -f crates/benilla-app/Cargo.toml
-          test -f crates/benilla-app/src/textinput/clipboard.rs
 
       - name: Configurar Linkers de Android para Cargo
         run: |
