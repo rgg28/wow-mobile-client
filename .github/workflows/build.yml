@@ -29,7 +29,7 @@ jobs:
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           yes | sudo "$SDKMANAGER" --licenses || echo "⚠️ Alerta en licencias."
           
-          # Instalamos la plataforma 30 que requiere tu motor junto con sus build-tools estables
+          # Instalamos la plataforma de desarrollo requerida por tu motor
           sudo "$SDKMANAGER" "ndk;25.2.9519653" "platforms;android-30" "platforms;android-33" "build-tools;30.0.3" "build-tools;33.0.2"
 
       - name: Install Rust Toolchain
@@ -73,24 +73,25 @@ jobs:
             mv crates/benilla-app/src/textInput crates/benilla-app/src/textinput
           fi
 
-          # Solución al error: Forzar la existencia de la carpeta assets en la raíz por si tu ZIP no la incluye
+          # Asegurar que la carpeta assets exista en el entorno del runner
           mkdir -p assets
 
       - name: Configurar metadatos de Android en Cargo.toml
         run: |
           set -euo pipefail
-          # Inyectamos los metadatos necesarios apuntando a la API 30 sin exigir assets externas conflictivas
+          # Inyectamos los metadatos necesarios apuntando al nombre real de tu librería nativa (lib_name)
           echo "" >> Cargo.toml
           echo "[package.metadata.android]" >> Cargo.toml
           echo 'package = "com.wow.mobile"' >> Cargo.toml
           echo 'label = "WoW Mobile"' >> Cargo.toml
+          echo 'lib_name = "kira"' >> Cargo.toml
           echo 'min_sdk_version = 21' >> Cargo.toml
           echo 'target_sdk_version = 30' >> Cargo.toml
 
       - name: Compilar y Empaquetar APK de forma Nativa
         run: |
           set -euo pipefail
-          # Compilación directa a APK usando el compilador nativo de Rust para Android
+          # Compilación directa a APK vinculando el archivo libkira.so de forma correcta
           cargo apk build --release --target aarch64-linux-android
 
       - name: Subir APK Final para Jugar
