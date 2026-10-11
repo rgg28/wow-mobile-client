@@ -80,7 +80,7 @@ jobs:
         run: |
           set -euo pipefail
           # Inyectamos los metadatos necesarios apuntando al nombre real de tu librería nativa (lib_name)
-          # Subimos min_sdk_version a 26 (Android 8.0) para que el enlazador encuentre el framework AAudio nativamente
+          # NOTA: Este paso ahora se ejecuta DESPUÉS de desempaquetar el ZIP para evitar que sea sobreescrito.
           echo "" >> Cargo.toml
           echo "[package.metadata.android]" >> Cargo.toml
           echo 'package = "com.wow.mobile"' >> Cargo.toml
@@ -96,7 +96,7 @@ jobs:
           export ANDROID_SDK_ROOT="$ANDROID_HOME"
           export ANDROID_NDK_ROOT="$NDK_HOME"
           
-          # Compilación directa sin flags inválidos
+          # Compilación directa usando el Cargo.toml correctamente modificado con API Mínima 26
           cargo apk build --release --target aarch64-linux-android
 
       - name: Subir APK Final para Jugar
