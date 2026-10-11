@@ -113,28 +113,32 @@ jobs:
           mkdir -p my-app/app/src/main/jniLibs/arm64-v8a
           mkdir -p my-app/app/src/main/jniLibs/armeabi-v7a
 
-          # 1. Configuración de Gradle Raíz
-          echo "buildscript {" > my-app/build.gradle
-          echo "    repositories { google(); mavenCentral() }" >> my-app/build.gradle
-          echo "    dependencies { classpath 'com.android.tools.build:gradle:7.4.2' }" >> my-app/build.gradle
-          echo "}" >> my-app/build.gradle
-          echo "allprojects { repositories { google(); mavenCentral() } }" >> my-app/build.gradle
+          # 1. Configuración de Gradle con Plugin moderno compatible con Gradle 8+
+          cat << 'EOF' > my-app/build.gradle
+          buildscript {
+              repositories { google() \n mavenCentral() }
+              dependencies { classpath 'com.android.tools.build:gradle:8.1.4' }
+          }
+          allprojects { repositories { google() \n mavenCentral() } }
+          EOF
 
           echo "include ':app'" > my-app/settings.gradle
 
           # 2. Configuración de Gradle de la App
-          echo "plugins { id 'com.android.application' }" > my-app/app/build.gradle
-          echo "android {" >> my-app/app/build.gradle
-          echo "    namespace 'com.wow.mobile'" >> my-app/app/build.gradle
-          echo "    compileSdk 33" >> my-app/app/build.gradle
-          echo "    defaultConfig {" >> my-app/app/build.gradle
-          echo "        applicationId 'com.wow.mobile'" >> my-app/app/build.gradle
-          echo "        minSdk 21" >> my-app/app/build.gradle
-          echo "        targetSdk 33" >> my-app/app/build.gradle
-          echo "        versionCode 1" >> my-app/app/build.gradle
-          echo "        versionName '1.0'" >> my-app/app/build.gradle
-          echo "    }" >> my-app/app/build.gradle
-          echo "}" >> my-app/app/build.gradle
+          cat << 'EOF' > my-app/app/build.gradle
+          plugins { id 'com.android.application' }
+          android {
+              namespace 'com.wow.mobile'
+              compileSdk 33
+              defaultConfig {
+                  applicationId 'com.wow.mobile'
+                  minSdk 21
+                  targetSdk 33
+                  versionCode 1
+                  versionName '1.0'
+              }
+          }
+          EOF
 
           # 3. AndroidManifest mínimo
           cat << 'EOF' > my-app/app/src/main/AndroidManifest.xml
@@ -174,30 +178,23 @@ jobs:
           find target/armv7-linux-androideabi/release/ -maxdepth 1 -name "*.so" -exec cp {} my-app/app/src/main/jniLibs/armeabi-v7a/ \;
           echo "✅ Entorno de la aplicación Android andamiaje completado."
 
-      - name: Descargar e Inicializar Wrapper de Gradle
+      - name: Inicializar Entorno de Compilación Nativo
         run: |
           set -euo pipefail
           cd my-app
           
-          # Configurar propiedades del Wrapper
-          mkdir -p gradle/wrapper
-          cat << EOF > gradle/wrapper/gradle-wrapper.properties
-          distributionBase=GRADLE_USER_HOME
-          distributionPath=wrapper/dists
-          distributionUrl=https\://services.gradle.org/distributions/gradle-7.5-bin.zip
-          zipStoreBase=GRADLE_USER_HOME
-          zipStorePath=wrapper/dists
+          # Escribimos directamente el script ejecutable gradlew sin depender del comando externo
+          cat << 'EOF' > gradlew
+          #!/bin/sh
+          exec gradle "$@"
           EOF
-          
-          # En lugar de descargar gradlew con wget, usamos un comando interno de Gradle para generarlo de forma segura
-          gradle wrapper --gradle-version 7.5
-          echo "✅ Entorno Gradle inicializado sin descargas conflictivas."
+          chmod +x gradlew
+          echo "✅ Entorno de comandos de compilación configurado."
 
       - name: Compilar Aplicación (Generar APK)
         run: |
           set -euo pipefail
           cd my-app
-          chmod +x gradlew
           ./gradlew assembleDebug
 
       - name: Subir APK Final para Jugar
