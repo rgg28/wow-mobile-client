@@ -22,13 +22,13 @@ jobs:
       - name: Configurar Android SDK e instalar NDK
         run: |
           set -uo pipefail
-          export ANDROID_HOME=/usr/local/lib/android/sdk
+          export ANDROID_HOME="/usr/local/lib/android/sdk"
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           echo "NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
           
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          yes | sudo $SDKMANAGER --licenses || echo "⚠️ Alerta en licencias."
-          sudo $SDKMANAGER "ndk;25.2.9519653" "platforms;android-33" "build-tools;33.0.2"
+          yes | sudo "$SDKMANAGER" --licenses || echo "⚠️ Alerta en licencias."
+          sudo "$SDKMANAGER" "ndk;25.2.9519653" "platforms;android-33" "build-tools;33.0.2"
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -75,21 +75,19 @@ jobs:
         run: |
           set -euo pipefail
           # Inyectamos los metadatos necesarios de la app directamente en el Cargo.toml para cargo-apk
-          cat << 'EOF' >> Cargo.toml
-
-[package.metadata.android]
-package = "com.wow.mobile"
-label = "WoW Mobile"
-assets = "assets"
-min_sdk_version = 21
-target_sdk_version = 33
-EOF
+          echo "" >> Cargo.toml
+          echo "[package.metadata.android]" >> Cargo.toml
+          echo 'package = "com.wow.mobile"' >> Cargo.toml
+          echo 'label = "WoW Mobile"' >> Cargo.toml
+          echo 'assets = "assets"' >> Cargo.toml
+          echo 'min_sdk_version = 21' >> Cargo.toml
+          echo 'target_sdk_version = 33' >> Cargo.toml
 
       - name: Compilar y Empaquetar APK de forma Nativa
         run: |
           set -euo pipefail
           # Compilación directa a APK usando el compilador nativo de Rust para Android
-          ANDROID_NDK_ROOT=$NDK_HOME cargo apk build --release --target aarch64-linux-android
+          cargo apk build --release --target aarch64-linux-android
 
       - name: Subir APK Final para Jugar
         uses: actions/upload-artifact@v4
