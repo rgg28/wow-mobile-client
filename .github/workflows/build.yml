@@ -19,23 +19,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Configurar Android SDK e instalar NDK
+      # OPTIMIZACIÓN: Se usa la acción oficial para configurar el SDK y el NDK exacto sin comandos manuales
+      - name: Setup Android SDK & NDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'ndk;25.2.9519653 platforms;android-30 platforms;android-33 build-tools;30.0.3 build-tools;33.0.2'
+
+      # Se guardan las rutas en las variables de entorno globales necesarias para los pasos posteriores
+      - name: Exportar variables de entorno de Android
         run: |
-          set -uo pipefail
-          export ANDROID_HOME="/usr/local/lib/android/sdk"
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           echo "NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
-          
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          yes | "$SDKMANAGER" --licenses || echo "⚠️ Alerta en licencias."
-          
-          # Instalamos las plataformas y herramientas necesarias sin usar 'sudo'
-          "$SDKMANAGER" "ndk;25.2.9519653" "platforms;android-30" "platforms;android-33" "build-tools;30.0.3" "build-tools;33.0.2"
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android
+
+      # OPTIMIZACIÓN: Añadido caché para cargo-apk para evitar compilarlo desde cero en cada ejecución (ahorra ~35 segundos)
+      - name: Cachear herramientas de Cargo
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-apk
+          key: ${{ runner.os }}-cargo-apk-v0.10.0
 
       - name: Instalar dependencias del sistema y cargo-apk
         run: |
@@ -43,8 +49,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y pkg-config libasound2-dev libudev-dev clang lld file
           
-          # Instalamos la herramienta nativa para empaquetar APKs desde Rust sin usar Gradle
-          cargo install cargo-apk
+          # Solo se instala si no fue recuperado exitosamente por el caché
+          if ! command -v cargo-apk &> /dev/null; then
+            cargo install cargo-apk --version 0.10.0
+          fi
 
       - name: Extraer y acomodar fuentes de Benilla
         run: |
@@ -79,8 +87,6 @@ jobs:
       - name: Configurar metadatos de Android en Cargo.toml
         run: |
           set -euo pipefail
-          # Inyectamos los metadatos necesarios apuntando al nombre real de tu librería nativa (lib_name)
-          # NOTA: Este paso ahora se ejecuta DESPUÉS de desempaquetar el ZIP para evitar que sea sobreescrito.
           echo "" >> Cargo.toml
           echo "[package.metadata.android]" >> Cargo.toml
           echo 'package = "com.wow.mobile"' >> Cargo.toml
@@ -92,12 +98,11 @@ jobs:
       - name: Compilar y Empaquetar APK de forma Nativa
         run: |
           set -euo pipefail
-          # Exportamos las variables de entorno de herencia crítica para cargo-apk y el enlazador lld
           export ANDROID_SDK_ROOT="$ANDROID_HOME"
           export ANDROID_NDK_ROOT="$NDK_HOME"
           
-          # Compilación directa usando el Cargo.toml correctamente modificado con API Mínima 26
-          cargo apk build --release --target aarch64-linux-android
+          # SOLUCIÓN AL ERROR: Se especifica el target con el API Level mínimo (26) requerido para AAudio
+          cargo apk build --release --target aarch64-linux-android26
 
       - name: Subir APK Final para Jugar
         uses: actions/upload-artifact@v4
