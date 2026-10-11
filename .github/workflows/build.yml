@@ -25,34 +25,17 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Configurar Android SDK e instalar NDK (Modo Depuración)
+      - name: Configurar Android SDK e instalar NDK
         run: |
           set -uo pipefail
           
-          echo "=== 🔎 AUDITORÍA DE ENTORNO ==="
           export ANDROID_HOME=/usr/local/lib/android/sdk
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           
-          echo "Buscando ubicación de sdkmanager en el disco..."
-          find /usr/local/lib/android/sdk -name sdkmanager 2>/dev/null
-          
-          # Ruta esperada en los runners de GitHub Enterprise/Ubuntu
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           
-          echo "=== 🛠️ EJECUTANDO INSTALACIÓN ==="
-          echo "Aceptando licencias con sudo..."
-          yes | sudo $SDKMANAGER --licenses || echo "⚠️ Alerta en la aceptación de licencias por ruta estándar."
-          
-          echo "Instalando NDK 25.2.9519653 con sudo..."
+          yes | sudo $SDKMANAGER --licenses || echo "⚠️ Alerta en licencias."
           sudo $SDKMANAGER "ndk;25.2.9519653"
-          STATUS=$?
-          
-          if [ $STATUS -ne 0 ]; then
-            echo "❌ El sdkmanager por ruta absoluta falló con código $STATUS."
-            echo "Intentando fallback usando comando directo global..."
-            yes | sdkmanager "ndk;25.2.9519653" || true
-            exit 1
-          fi
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -64,7 +47,6 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y \
-            unzip \
             pkg-config \
             libasound2-dev \
             libudev-dev \
@@ -79,23 +61,28 @@ jobs:
 
           if [ -f benilla.zip ]; then
             mkdir -p /tmp/benilla-source
-            unzip -q benilla.zip -d /tmp/benilla-source
+            
+            # Extracción limpia mediante Python3
+            python3 -c "import zipfile; zipfile.ZipFile('benilla.zip').extractall('/tmp/benilla-source')"
 
-            # Buscar el Cargo.toml principal dentro de benilla-0.2.0
+            echo "=== 📁 Estructura extraída internamente ==="
+            ls -la /tmp/benilla-source/
+            
             ROOT="$(find /tmp/benilla-source -name Cargo.toml -type f -print -quit)"
 
             if [ -z "$ROOT" ]; then
-              echo "::error::Cargo.toml not found in benilla.zip"
+              echo "::error::No se encontró Cargo.toml dentro del archivo benilla.zip"
               exit 1
             fi
 
             SOURCE_DIR="$(dirname "$ROOT")"
-            
-            # Transferir de manera limpia el contenido a la raíz de trabajo
             rsync -a "$SOURCE_DIR/" .
+          else
+            echo "::error::El archivo benilla.zip no fue detectado en la raíz del repositorio."
+            exit 1
           fi
 
-          # Validar que todo esté en su lugar de forma correcta
+          # Validaciones obligatorias de archivos
           test -f Cargo.toml
           test -f crates/benilla-app/Cargo.toml
           test -f crates/benilla-app/src/textinput/clipboard.rs
@@ -104,7 +91,6 @@ jobs:
         run: |
           mkdir -p .cargo
           
-          # Ruta absoluta apuntando al NDK del sistema configurado previamente
           NDK_TOOLCHAIN="/usr/local/lib/android/sdk/ndk/25.2.9519653/toolchains/llvm/prebuilt/linux-x86_64/bin"
           
           cat << EOF > .cargo/config.toml
@@ -123,7 +109,6 @@ jobs:
 
       - name: Compilar proyecto (Rust / Cargo)
         run: |
-          # Compilación orientada a la arquitectura móvil de Android
           cargo build --release --target aarch64-linux-android
 
       - name: Subir artefactos compilados
