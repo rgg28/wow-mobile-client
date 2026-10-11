@@ -1,0 +1,536 @@
+name: Build WoW MoP Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/build-android.yml"
+      - "wow engine/**"
+      - "wow-engine/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Generate Android project and compile APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android components
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "ndk;28.2.13676358" \
+            "cmake;3.22.1"
+          yes | sdkmanager --licenses >/dev/null || true
+
+      - name: Download SDL3
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 \
+            https://github.com/libsdl-org/SDL.git \
+            "$RUNNER_TEMP/SDL"
+
+          test -f "$RUNNER_TEMP/SDL/android-project/build.gradle"
+          mkdir -p generated-android
+          cp -a "$RUNNER_TEMP/SDL/android-project/." generated-android/
+          mkdir -p generated-android/app/jni
+          cp -a "$RUNNER_TEMP/SDL" generated-android/app/jni/SDL
+
+      - name: Generate native Android application
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP="$GITHUB_WORKSPACE/generated-android"
+
+          mkdir -p "$APP/app/jni/src"
+          mkdir -p "$APP/app/src/main/java/com/wowmobile/client"
+
+          cat > "$APP/app/jni/CMakeLists.txt" <<'CMAKE'
+          cmake_minimum_required(VERSION 3.22)
+          project(WoWMobileNative C)
+          add_subdirectory(SDL)
+          add_subdirectory(src)
+          CMAKE
+
+          cat > "$APP/app/jni/src/CMakeLists.txt" <<'CMAKE'
+          cmake_minimum_required(VERSION 3.22)
+          project(wowmobile C)
+          add_library(main SHARED main.c)
+          target_link_libraries(main PRIVATE SDL3::SDL3)
+          target_compile_features(main PRIVATE c_std_11)
+          CMAKE
+
+          cat > "$APP/app/jni/src/main.c" <<'C'
+          #include <SDL3/SDL.h>
+          #include <SDL3/SDL_system.h>
+          #include <jni.h>
+          #include <stdint.h>
+          #include <stdbool.h>
+          #include <string.h>
+          #include <stdio.h>
+
+          static char status_text[180] =
+              "Selecciona la carpeta de datos de WoW.";
+          static char resource_text[180] =
+              "Los datos del juego permanecen fuera de la APK.";
+          static bool checked = false;
+          static Uint64 last_check = 0;
+
+          JNIEXPORT void JNICALL
+          Java_com_wowmobile_client_WoWActivity_nativeFolderChanged(
+              JNIEnv *env, jclass clazz)
+          {
+              (void)env;
+              (void)clazz;
+              checked = false;
+          }
+
+          static JNIEnv *get_env(void)
+          {
+              return (JNIEnv *)SDL_GetAndroidJNIEnv();
+          }
+
+          static jobject get_activity(void)
+          {
+              return (jobject)SDL_GetAndroidActivity();
+          }
+
+          static bool has_folder(void)
+          {
+              JNIEnv *env = get_env();
+              jobject activity = get_activity();
+              if (!env || !activity) return false;
+
+              jclass cls = (*env)->GetObjectClass(env, activity);
+              jmethodID method = (*env)->GetMethodID(
+                  env, cls, "hasSelectedFolder", "()Z");
+
+              bool result = false;
+              if (method) {
+                  result = (*env)->CallBooleanMethod(env, activity, method)
+                           == JNI_TRUE;
+              }
+
+              if ((*env)->ExceptionCheck(env)) {
+                  (*env)->ExceptionClear(env);
+                  result = false;
+              }
+
+              (*env)->DeleteLocalRef(env, cls);
+              (*env)->DeleteLocalRef(env, activity);
+              return result;
+          }
+
+          static void open_picker(void)
+          {
+              JNIEnv *env = get_env();
+              jobject activity = get_activity();
+
+              if (!env || !activity) {
+                  SDL_strlcpy(status_text,
+                      "No se pudo acceder al selector Android.",
+                      sizeof(status_text));
+                  return;
+              }
+
+              jclass cls = (*env)->GetObjectClass(env, activity);
+              jmethodID method = (*env)->GetMethodID(
+                  env, cls, "openFolderPicker", "()V");
+
+              if (method) {
+                  (*env)->CallVoidMethod(env, activity, method);
+              } else {
+                  SDL_strlcpy(status_text,
+                      "No se encontro el selector de carpetas.",
+                      sizeof(status_text));
+              }
+
+              if ((*env)->ExceptionCheck(env)) {
+                  (*env)->ExceptionClear(env);
+                  SDL_strlcpy(status_text,
+                      "Error al abrir el selector.",
+                      sizeof(status_text));
+              }
+
+              (*env)->DeleteLocalRef(env, cls);
+              (*env)->DeleteLocalRef(env, activity);
+          }
+
+          static void check_folder(void)
+          {
+              if (!has_folder()) {
+                  SDL_strlcpy(status_text,
+                      "Pulsa el boton inferior para elegir la carpeta.",
+                      sizeof(status_text));
+                  return;
+              }
+
+              SDL_strlcpy(status_text,
+                  "Permiso persistente de carpeta disponible.",
+                  sizeof(status_text));
+
+              SDL_strlcpy(resource_text,
+                  "Acceso SAF preparado. El lector BLP/M2/ADT se integra por etapas.",
+                  sizeof(resource_text));
+              checked = true;
+          }
+
+          int main(int argc, char **argv)
+          {
+              (void)argc;
+              (void)argv;
+
+              if (!SDL_Init(SDL_INIT_VIDEO)) {
+                  SDL_Log("SDL_Init: %s", SDL_GetError());
+                  return 1;
+              }
+
+              SDL_Window *window = NULL;
+              SDL_Renderer *renderer = NULL;
+
+              if (!SDL_CreateWindowAndRenderer(
+                      "WoW MoP Android", 960, 540,
+                      SDL_WINDOW_FULLSCREEN, &window, &renderer)) {
+                  SDL_Log("No se pudo crear ventana: %s", SDL_GetError());
+                  SDL_Quit();
+                  return 1;
+              }
+
+              bool running = true;
+              SDL_Event event;
+
+              while (running) {
+                  while (SDL_PollEvent(&event)) {
+                      if (event.type == SDL_EVENT_QUIT) {
+                          running = false;
+                      }
+
+                      if (event.type == SDL_EVENT_KEY_DOWN &&
+                          event.key.key == SDLK_ESCAPE) {
+                          running = false;
+                      }
+
+                      float x = 0.0f, y = 0.0f;
+                      bool pressed = false;
+
+                      if (event.type == SDL_EVENT_FINGER_DOWN) {
+                          x = event.tfinger.x;
+                          y = event.tfinger.y;
+                          pressed = true;
+                      } else if (
+                          event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+                          int w = 1, h = 1;
+                          SDL_GetWindowSize(window, &w, &h);
+                          x = event.button.x / (float)w;
+                          y = event.button.y / (float)h;
+                          pressed = true;
+                      }
+
+                      if (pressed && y > 0.72f &&
+                          x > 0.05f && x < 0.95f) {
+                          open_picker();
+                      }
+                  }
+
+                  Uint64 now = SDL_GetTicks();
+                  if (!checked || now - last_check > 2000) {
+                      last_check = now;
+                      check_folder();
+                  }
+
+                  SDL_SetRenderDrawColor(renderer, 12, 18, 28, 255);
+                  SDL_RenderClear(renderer);
+
+                  SDL_SetRenderDrawColor(renderer, 28, 43, 61, 255);
+                  SDL_FRect panel = {24, 24, 912, 390};
+                  SDL_RenderFillRect(renderer, &panel);
+
+                  SDL_SetRenderDrawColor(renderer, 39, 119, 177, 255);
+                  SDL_FRect button = {48, 430, 864, 76};
+                  SDL_RenderFillRect(renderer, &button);
+
+                  SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+                  SDL_RenderDebugText(renderer, 48, 55,
+                      "WORLD OF WARCRAFT - MISTS OF PANDARIA");
+                  SDL_RenderDebugText(renderer, 48, 90,
+                      "Native Android / SDL3");
+                  SDL_RenderDebugText(renderer, 48, 160, status_text);
+                  SDL_RenderDebugText(renderer, 48, 210, resource_text);
+                  SDL_RenderDebugText(renderer, 48, 270,
+                      "Los archivos del juego no se incluyen en la APK.");
+                  SDL_RenderDebugText(renderer, 280, 462,
+                      "SELECCIONAR CARPETA DEL JUEGO");
+
+                  SDL_RenderPresent(renderer);
+              }
+
+              SDL_DestroyRenderer(renderer);
+              SDL_DestroyWindow(window);
+              SDL_Quit();
+              return 0;
+          }
+          C
+
+          cat > "$APP/app/src/main/java/com/wowmobile/client/WoWActivity.java" <<'JAVA'
+          package com.wowmobile.client;
+
+          import android.content.Intent;
+          import android.net.Uri;
+          import android.os.Bundle;
+          import android.provider.DocumentsContract;
+          import android.database.Cursor;
+          import android.content.ContentResolver;
+          import android.util.Log;
+
+          import org.libsdl.app.SDLActivity;
+
+          public class WoWActivity extends SDLActivity {
+              private static final int REQUEST_FOLDER = 8701;
+              private static final String PREFS = "wow_external_data";
+              private static final String KEY_URI = "tree_uri";
+
+              public static native void nativeFolderChanged();
+
+              @Override
+              protected void onCreate(Bundle state) {
+                  super.onCreate(state);
+
+                  if (!hasSelectedFolder()) {
+                      getWindow().getDecorView().postDelayed(
+                          this::openFolderPicker, 900);
+                  }
+              }
+
+              public boolean hasSelectedFolder() {
+                  String uri = getSharedPreferences(PREFS, MODE_PRIVATE)
+                      .getString(KEY_URI, "");
+                  return uri != null && !uri.isEmpty();
+              }
+
+              public void openFolderPicker() {
+                  runOnUiThread(() -> {
+                      Intent intent =
+                          new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+
+                      intent.addFlags(
+                          Intent.FLAG_GRANT_READ_URI_PERMISSION |
+                          Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION |
+                          Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+
+                      startActivityForResult(intent, REQUEST_FOLDER);
+                  });
+              }
+
+              @Override
+              protected void onActivityResult(
+                  int requestCode, int resultCode, Intent data) {
+                  super.onActivityResult(requestCode, resultCode, data);
+
+                  if (requestCode != REQUEST_FOLDER ||
+                      resultCode != RESULT_OK ||
+                      data == null || data.getData() == null) {
+                      return;
+                  }
+
+                  Uri uri = data.getData();
+                  int flags = data.getFlags() &
+                      (Intent.FLAG_GRANT_READ_URI_PERMISSION |
+                       Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+
+                  try {
+                      getContentResolver()
+                          .takePersistableUriPermission(uri, flags);
+                  } catch (SecurityException e) {
+                      Log.w("WoWMobile", "Permiso persistente no disponible", e);
+                  }
+
+                  getSharedPreferences(PREFS, MODE_PRIVATE)
+                      .edit().putString(KEY_URI, uri.toString()).apply();
+
+                  try {
+                      nativeFolderChanged();
+                  } catch (UnsatisfiedLinkError e) {
+                      Log.i("WoWMobile", "Aviso nativo pendiente de inicializacion");
+                  }
+              }
+
+              /*
+               * Lee un archivo relativo a la carpeta seleccionada.
+               * Se usa DocumentFile API del proveedor SAF, no rutas de Windows
+               * ni fopen() sobre una ruta Android que no existe.
+               */
+              public byte[] readGameFile(String relativePath) {
+                  if (relativePath == null ||
+                      relativePath.startsWith("/") ||
+                      relativePath.contains("..")) {
+                      return null;
+                  }
+
+                  String saved = getSharedPreferences(PREFS, MODE_PRIVATE)
+                      .getString(KEY_URI, "");
+                  if (saved == null || saved.isEmpty()) return null;
+
+                  Uri tree = Uri.parse(saved);
+                  String documentId;
+
+                  try {
+                      documentId = DocumentsContract.getTreeDocumentId(tree);
+                  } catch (Exception e) {
+                      return null;
+                  }
+
+                  ContentResolver resolver = getContentResolver();
+                  Uri current = DocumentsContract
+                      .buildDocumentUriUsingTree(tree, documentId);
+
+                  for (String part : relativePath.replace('\\', '/').split("/")) {
+                      Uri children = DocumentsContract
+                          .buildChildDocumentsUriUsingTree(tree, documentId);
+
+                      String foundId = null;
+                      String[] columns = {
+                          DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                          DocumentsContract.Document.COLUMN_DISPLAY_NAME
+                      };
+
+                      try (Cursor cursor = resolver.query(
+                          children, columns, null, null, null)) {
+                          if (cursor == null) return null;
+
+                          while (cursor.moveToNext()) {
+                              String name = cursor.getString(1);
+                              if (name != null && name.equalsIgnoreCase(part)) {
+                                  foundId = cursor.getString(0);
+                                  break;
+                              }
+                          }
+                      } catch (Exception e) {
+                          Log.e("WoWMobile", "Error recorriendo carpeta", e);
+                          return null;
+                      }
+
+                      if (foundId == null) return null;
+                      documentId = foundId;
+                      current = DocumentsContract
+                          .buildDocumentUriUsingTree(tree, documentId);
+                  }
+
+                  try (java.io.InputStream in =
+                           resolver.openInputStream(current);
+                       java.io.ByteArrayOutputStream out =
+                           new java.io.ByteArrayOutputStream()) {
+                      if (in == null) return null;
+
+                      byte[] buffer = new byte[32768];
+                      int n;
+                      long total = 0;
+                      final long limit = 128L * 1024L * 1024L;
+
+                      while ((n = in.read(buffer)) != -1) {
+                          total += n;
+                          if (total > limit) return null;
+                          out.write(buffer, 0, n);
+                      }
+
+                      return out.toByteArray();
+                  } catch (Exception e) {
+                      Log.e("WoWMobile", "Error leyendo " + relativePath, e);
+                      return null;
+                  }
+              }
+          }
+          JAVA
+
+          # Cambiar la actividad inicial declarada por la plantilla SDL.
+          MANIFEST="$APP/app/src/main/AndroidManifest.xml"
+          sed -i \
+            's/org.libsdl.app.SDLActivity/com.wowmobile.client.WoWActivity/g' \
+            "$MANIFEST"
+
+          # Ajustar identificador de aplicación cuando la plantilla usa namespace.
+          GRADLE="$APP/app/build.gradle"
+          if grep -q 'applicationId' "$GRADLE"; then
+            sed -i 's/applicationId .*/applicationId "com.wowmobile.client"/' "$GRADLE"
+          else
+            sed -i '/android[[:space:]]*{/a\    namespace "com.wowmobile.client"\n    applicationId "com.wowmobile.client"' "$GRADLE"
+          fi
+
+          # Mantener una versión de SDK disponible en el runner.
+          sed -i 's/compileSdkVersion[[:space:]]*[0-9]*/compileSdkVersion 35/' "$GRADLE"
+          sed -i 's/targetSdkVersion[[:space:]]*[0-9]*/targetSdkVersion 35/' "$GRADLE"
+
+          # El proyecto SDL debe declarar que la fuente nativa está en app/jni.
+          if ! grep -q 'externalNativeBuild' "$GRADLE"; then
+            cat >> "$GRADLE" <<'GRADLE'
+
+          android {
+              externalNativeBuild {
+                  cmake {
+                      path "jni/CMakeLists.txt"
+                      version "3.22.1"
+                  }
+              }
+              defaultConfig {
+                  minSdkVersion 26
+                  ndk {
+                      abiFilters "arm64-v8a"
+                  }
+                  externalNativeBuild {
+                      cmake {
+                          arguments "-DANDROID_STL=c++_shared"
+                      }
+                  }
+              }
+          }
+          GRADLE
+          fi
+
+          test -f "$APP/gradlew"
+          test -f "$APP/app/src/main/java/org/libsdl/app/SDLActivity.java"
+          test -f "$APP/app/jni/SDL/CMakeLists.txt"
+
+      - name: Build APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd generated-android
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="generated-android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          ls -lh "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | head -n 8
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wow-mop-android-apk
+          path: generated-android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
