@@ -28,16 +28,22 @@ jobs:
       - name: Configurar Android SDK e instalar NDK
         run: |
           set -euo pipefail
-          # Usar el SDK preinstalado en el entorno de GitHub Actions
-          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
+          
+          # Definir variables de entorno del SDK
           export ANDROID_HOME=/usr/local/lib/android/sdk
-          export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          
+          # Definir la ruta absoluta al binario correcto de sdkmanager
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           
           # Aceptar las licencias oficiales de Google
-          yes | sdkmanager --licenses || true
+          echo "Aceptando licencias..."
+          yes | $SDKMANAGER --licenses || true
           
-          # Instalar la versión exacta del NDK necesaria para Rust
-          sdkmanager "ndk;25.2.9519653"
+          # Actualizar el gestor e instalar la versión exacta del NDK necesaria para Rust
+          echo "Instalando Android NDK..."
+          $SDKMANAGER --update || true
+          $SDKMANAGER "ndk;25.2.9519653"
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
