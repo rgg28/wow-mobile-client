@@ -25,14 +25,18 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK Base
-        uses: android-actions/setup-android@v3
-
-      - name: Instalar Android NDK de forma dedicada
+      - name: Configurar Android SDK e instalar NDK
         run: |
           set -euo pipefail
-          # Aceptar licencias e instalar la versión estable del NDK que requiere Rust
+          # Usar el SDK preinstalado en el entorno de GitHub Actions
+          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
+          export ANDROID_HOME=/usr/local/lib/android/sdk
+          export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
+          
+          # Aceptar las licencias oficiales de Google
           yes | sdkmanager --licenses || true
+          
+          # Instalar la versión exacta del NDK necesaria para Rust
           sdkmanager "ndk;25.2.9519653"
 
       - name: Install Rust Toolchain
@@ -85,8 +89,8 @@ jobs:
         run: |
           mkdir -p .cargo
           
-          # Encontrar la ruta del compilador del NDK instalado
-          NDK_TOOLCHAIN="$ANDROID_HOME/ndk/25.2.9519653/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          # Ruta absoluta apuntando al NDK del sistema configurado previamente
+          NDK_TOOLCHAIN="/usr/local/lib/android/sdk/ndk/25.2.9519653/toolchains/llvm/prebuilt/linux-x86_64/bin"
           
           cat << EOF > .cargo/config.toml
           [target.aarch64-linux-android]
@@ -104,7 +108,7 @@ jobs:
 
       - name: Compilar proyecto (Rust / Cargo)
         run: |
-          # Compilación orientada a la arquitectura móvil principal de Android
+          # Compilación orientada a la arquitectura móvil de Android
           cargo build --release --target aarch64-linux-android
 
       - name: Subir artefactos compilados
