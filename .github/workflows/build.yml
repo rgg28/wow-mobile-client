@@ -92,7 +92,6 @@ jobs:
           mkdir -p .cargo
           NDK_TOOLCHAIN="/usr/local/lib/android/sdk/ndk/25.2.9519653/toolchains/llvm/prebuilt/linux-x86_64/bin"
           
-          # Ajustamos las llamadas a los compiladores Clang nativos del NDK de Android
           cat << EOF > .cargo/config.toml
           [target.aarch64-linux-android]
           linker = "$NDK_TOOLCHAIN/aarch64-linux-android33-clang"
@@ -114,6 +113,7 @@ jobs:
           mkdir -p my-app/app/src/main/jniLibs/arm64-v8a
           mkdir -p my-app/app/src/main/jniLibs/armeabi-v7a
 
+          # 1. Configuración de Gradle Raíz
           echo "buildscript {" > my-app/build.gradle
           echo "    repositories { google(); mavenCentral() }" >> my-app/build.gradle
           echo "    dependencies { classpath 'com.android.tools.build:gradle:7.4.2' }" >> my-app/build.gradle
@@ -122,6 +122,7 @@ jobs:
 
           echo "include ':app'" > my-app/settings.gradle
 
+          # 2. Configuración de Gradle de la App
           echo "plugins { id 'com.android.application' }" > my-app/app/build.gradle
           echo "android {" >> my-app/app/build.gradle
           echo "    namespace 'com.wow.mobile'" >> my-app/app/build.gradle
@@ -135,6 +136,7 @@ jobs:
           echo "    }" >> my-app/app/build.gradle
           echo "}" >> my-app/app/build.gradle
 
+          # 3. AndroidManifest mínimo
           cat << 'EOF' > my-app/app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://android.com">
               <application android:label="WoW Mobile Client" android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
@@ -148,6 +150,7 @@ jobs:
           </manifest>
           EOF
 
+          # 4. Cargador Java de la librería Nativa (.so)
           cat << 'EOF' > my-app/app/src/main/java/com/wow/mobile/MainActivity.java
           package com.wow.mobile;
           import android.app.Activity;
@@ -174,13 +177,26 @@ jobs:
         run: |
           set -euo pipefail
           cd my-app
-          gradle wrapper --gradle-version 7.5
+          
+          # Descargamos los archivos de Gradle de forma manual en lugar de invocar comandos del sistema
+          mkdir -p gradle/wrapper
+          cat << EOF > gradle/wrapper/gradle-wrapper.properties
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-7.5-bin.zip
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          EOF
+          
+          # Descarga el ejecutable local para compilar de forma limpia
+          wget -q https://githubusercontent.com -O gradlew
+          chmod +x gradlew
+          echo "✅ Entorno Gradle corregido y forzado a la versión 7.5."
 
       - name: Compilar Aplicación (Generar APK)
         run: |
           set -euo pipefail
           cd my-app
-          chmod +x gradlew
           ./gradlew assembleDebug
 
       - name: Subir APK Final para Jugar
