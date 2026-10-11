@@ -59,44 +59,37 @@ jobs:
           set -euo pipefail
 
           if [ -f benilla.zip ]; then
-            python3 -c "
-import zipfile, os, shutil
+            # 1. Crear carpeta temporal y extraer de forma nativa
+            mkdir -p /tmp/benilla-source
+            python3 -c "import zipfile; zipfile.ZipFile('benilla.zip').extractall('/tmp/benilla-source')"
 
-with zipfile.ZipFile('benilla.zip', 'r') as zip_ref:
-    zip_ref.extractall('/tmp/benilla-source')
+            # 2. Localizar dónde quedó el Cargo.toml principal
+            ROOT_TOML=$(find /tmp/benilla-source -name Cargo.toml -type f -print -quit)
+            if [ -z "$ROOT_TOML" ]; then
+              echo "::error::No se encontró Cargo.toml en el ZIP"
+              exit 1
+            fi
+            SOURCE_DIR=$(dirname "$ROOT_TOML")
 
-source_dir = None
-for root, dirs, files in os.walk('/tmp/benilla-source'):
-    if 'Cargo.toml' in files:
-        source_dir = root
-        break
-
-if not source_dir:
-    print('::error::No se encontró Cargo.toml en el ZIP')
-    exit(1)
-
-for item in os.listdir(source_dir):
-    s = os.path.join(source_dir, item)
-    d = os.path.join('.', item)
-    if os.path.isdir(s):
-        if os.path.exists(d):
-            shutil.rmtree(d)
-        shutil.move(s, d)
-    else:
-        shutil.move(s, d)
-
-print('✅ Fuentes reacomodadas con éxito en la raíz.')
-"
+            # 3. Mover de forma segura usando comandos Bash nativos limpios
+            # Borramos directorios conflictivos si ya existieran antes de mover
+            if [ -d "$SOURCE_DIR/crates" ] && [ -d "crates" ]; then rm -rf crates; fi
+            
+            # Copiar todo el contenido interno a la raíz del espacio de trabajo
+            cp -r "$SOURCE_DIR"/* .
+            echo "✅ Fuentes reacomodadas con éxito en la raíz."
           else
             echo "::error::El archivo benilla.zip no fue detectado en la raíz del repositorio."
             exit 1
           fi
 
           echo "=== 📁 Validando y forzando rutas de archivos ==="
+          # Normalizar textInput a minúsculas de forma nativa si llegase a existir con variaciones
           if [ -d "crates/benilla-app/src/textInput" ]; then
             mv crates/benilla-app/src/textInput crates/benilla-app/src/textinput
           fi
 
+          # Validaciones estructurales para Cargo
           test -f Cargo.toml
           test -d crates
 
