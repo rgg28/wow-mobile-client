@@ -1,0 +1,150 @@
+name: Benilla Android Build
+
+on:
+  push:
+    branches: ["main", "master"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benilla-android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_RELEASE_DEBUG: 0
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            unzip \
+            pkg-config \
+            libasound2-dev \
+            libudev-dev \
+            clang \
+            lld
+
+      - name: Extract Benilla source
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -f benilla.zip ]; then
+            mkdir -p /tmp/benilla-source
+            unzip -q benilla.zip -d /tmp/benilla-source
+
+            ROOT="$(find /tmp/benilla-source \
+              -mindepth 1 -maxdepth 3 \
+              -name Cargo.toml \
+              -print -quit | xargs dirname)"
+
+            if [ -z "${ROOT:-}" ] || [ ! -f "$ROOT/Cargo.toml" ]; then
+              echo "::error::Cargo.toml not found in benilla.zip"
+              exit 1
+            fi
+
+            cp -a "$ROOT/." .
+          fi
+
+          test -f Cargo.toml
+          test -f crates/benilla-app/Cargo.toml
+          test -f crates/benilla-app/src/textinput/clipboard.rs
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 12266719
+          packages: |
+            platforms;android-33
+            build-tools;33.0.2
+            ndk;25.2.9519653
+
+      - name: Setup Rust
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-linux-android
+
+          rustc --version
+          cargo --version
+
+      - name: Configure Android NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          NDK="$ANDROID_HOME/ndk/25.2.9519653"
+          test -d "$NDK"
+
+          echo "ANDROID_NDK_HOME=$NDK" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$NDK" >> "$GITHUB_ENV"
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Verify Android dependency graph
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cargo tree \
+            -p benilla-app \
+            --target aarch64-linux-android \
+            -i arboard && {
+              echo "::error::arboard is still present in the Android dependency graph"
+              exit 1
+            } || {
+              echo "No active arboard dependency was reported."
+            }
+
+      - name: Build native Android library
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cargo ndk \
+            -t aarch64-linux-android \
+            build \
+            --release \
+            --no-default-features \
+            -p benilla-app
+
+          LIBRARY="target/aarch64-linux-android/release/libbenilla_app.so"
+
+          if [ ! -s "$LIBRARY" ]; then
+            echo "::error::Native library was not generated at $LIBRARY"
+            find target -type f \( -name '*.so' -o -name '*.rlib' \) -print
+            exit 1
+          fi
+
+          file "$LIBRARY"
+          ls -lh "$LIBRARY"
+
+      - name: Upload native library
+        uses: actions/upload-artifact@v4
+        with:
+          name: Benilla-Android-arm64-native
+          if-no-files-found: error
+          path: target/aarch64-linux-android/release/libbenilla_app.so
