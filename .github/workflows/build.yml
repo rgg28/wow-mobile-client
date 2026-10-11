@@ -25,25 +25,34 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Configurar Android SDK e instalar NDK
+      - name: Configurar Android SDK e instalar NDK (Modo Depuración)
         run: |
-          set -euo pipefail
+          set -uo pipefail
           
-          # Definir variables de entorno del SDK
+          echo "=== 🔎 AUDITORÍA DE ENTORNO ==="
           export ANDROID_HOME=/usr/local/lib/android/sdk
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           
-          # Definir la ruta absoluta al binario correcto de sdkmanager
+          echo "Buscando ubicación de sdkmanager en el disco..."
+          find /usr/local/lib/android/sdk -name sdkmanager 2>/dev/null
+          
+          # Ruta esperada en los runners de GitHub Enterprise/Ubuntu
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           
-          # Aceptar las licencias oficiales de Google
-          echo "Aceptando licencias..."
-          yes | $SDKMANAGER --licenses || true
+          echo "=== 🛠️ EJECUTANDO INSTALACIÓN ==="
+          echo "Aceptando licencias con sudo..."
+          yes | sudo $SDKMANAGER --licenses || echo "⚠️ Alerta en la aceptación de licencias por ruta estándar."
           
-          # Actualizar el gestor e instalar la versión exacta del NDK necesaria para Rust
-          echo "Instalando Android NDK..."
-          $SDKMANAGER --update || true
-          $SDKMANAGER "ndk;25.2.9519653"
+          echo "Instalando NDK 25.2.9519653 con sudo..."
+          sudo $SDKMANAGER "ndk;25.2.9519653"
+          STATUS=$?
+          
+          if [ $STATUS -ne 0 ]; then
+            echo "❌ El sdkmanager por ruta absoluta falló con código $STATUS."
+            echo "Intentando fallback usando comando directo global..."
+            yes | sdkmanager "ndk;25.2.9519653" || true
+            exit 1
+          fi
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
