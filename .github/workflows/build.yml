@@ -22,13 +22,11 @@ jobs:
       - name: Configurar Android SDK e instalar NDK
         run: |
           set -uo pipefail
-          # En los runners de GitHub, el usuario local 'runner' tiene permisos de escritura en esta carpeta
           export ANDROID_HOME="/usr/local/lib/android/sdk"
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           echo "NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
           
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          # Quitamos 'sudo' para evitar problemas de permisos cruzados y variables de entorno ocultas
           yes | "$SDKMANAGER" --licenses || echo "⚠️ Alerta en licencias."
           
           # Instalamos las plataformas y herramientas necesarias sin usar 'sudo'
@@ -94,8 +92,12 @@ jobs:
       - name: Compilar y Empaquetar APK de forma Nativa
         run: |
           set -euo pipefail
-          # Forzamos explícitamente a cargo-apk a leer el SDK y el NDK correctos mediante flags de comandos
-          cargo apk build --release --target aarch64-linux-android --sdk-path "$ANDROID_HOME" --ndk-path "$NDK_HOME"
+          # Exportamos las variables de entorno de herencia crítica para cargo-apk y el enlazador lld
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          export ANDROID_NDK_ROOT="$NDK_HOME"
+          
+          # Compilación directa sin flags inválidos
+          cargo apk build --release --target aarch64-linux-android
 
       - name: Subir APK Final para Jugar
         uses: actions/upload-artifact@v4
