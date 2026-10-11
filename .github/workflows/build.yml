@@ -1,4 +1,4 @@
-name: Android Build
+name: Android Full Auto-App Build
 
 on:
   push:
@@ -28,31 +28,23 @@ jobs:
       - name: Configurar Android SDK e instalar NDK
         run: |
           set -uo pipefail
-          
           export ANDROID_HOME=/usr/local/lib/android/sdk
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          
           yes | sudo $SDKMANAGER --licenses || echo "⚠️ Alerta en licencias."
-          sudo $SDKMANAGER "ndk;25.2.9519653"
+          sudo $SDKMANAGER "ndk;25.2.9519653" "platforms;android-33" "build-tools;33.0.2"
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android, armv7-linux-androideabi, x86_64-linux-android, i686-linux-android
+          targets: aarch64-linux-android, armv7-linux-androideabi
 
       - name: Instalar dependencias del sistema
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            libasound2-dev \
-            libudev-dev \
-            clang \
-            lld \
-            file
+          sudo apt-get install -y pkg-config libasound2-dev libudev-dev clang lld file
 
       - name: Extraer y acomodar fuentes de Benilla
         run: |
@@ -70,47 +62,137 @@ jobs:
             SOURCE_DIR=$(dirname "$ROOT_TOML")
 
             if [ -d "$SOURCE_DIR/crates" ] && [ -d "crates" ]; then rm -rf crates; fi
-            
             cp -r "$SOURCE_DIR"/* .
             echo "✅ Fuentes reacomodadas con éxito en la raíz."
           else
-            echo "::error::El archivo benilla.zip no fue detectado en la raíz del repositorio."
+            echo "::error::El archivo benilla.zip no fue detectado."
             exit 1
           fi
 
-          echo "=== 🔎 DIAGNÓSTICO REAL DE ARCHIVOS ==="
-          echo "Listando archivos actuales en la raíz del runner:"
-          ls -F
-          
-          echo "Buscando si existen subcarpetas crates o similares de forma profunda:"
-          find . -maxdepth 3 -type d
+          if [ -d "crates/benilla-app/src/textInput" ]; then
+            mv crates/benilla-app/src/textInput crates/benilla-app/src/textinput
+          fi
+
+      - name: Forzar compilación de librería dinámica (.so)
+        run: |
+          set -euo pipefail
+          # Modificar el Cargo.toml al vuelo para asegurar la exportación cdylib si falta
+          if ! grep -q 'crate-type = \["cdylib"\]' Cargo.toml; then
+            cat << 'EOF' >> Cargo.toml
+
+[lib]
+crate-type = ["cdylib"]
+name = "kira"
+EOF
+          fi
 
       - name: Configurar Linkers de Android para Cargo
         run: |
           mkdir -p .cargo
-          
           NDK_TOOLCHAIN="/usr/local/lib/android/sdk/ndk/25.2.9519653/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          
           cat << EOF > .cargo/config.toml
           [target.aarch64-linux-android]
           linker = "$NDK_TOOLCHAIN/aarch64-linux-android31-clang"
-
           [target.armv7-linux-androideabi]
           linker = "$NDK_TOOLCHAIN/armv7-linux-androideabi31-clang"
-
-          [target.x86_64-linux-android]
-          linker = "$NDK_TOOLCHAIN/x86_64-linux-android31-clang"
-
-          [target.i686-linux-android]
-          linker = "$NDK_TOOLCHAIN/i686-linux-android31-clang"
           EOF
 
-      - name: Compilar proyecto (Rust / Cargo)
+      - name: Compilar Motores nativos (.so)
         run: |
           cargo build --release --target aarch64-linux-android
+          cargo build --release --target armv7-linux-androideabi
 
-      - name: Subir artefactos compilados
+      - name: Crear Proyecto Android Base desde Cero
+        run: |
+          set -euo pipefail
+          mkdir -p my-app/app/src/main/res/values
+          mkdir -p my-app/app/src/main/java/com/wow/mobile
+          mkdir -p my-app/app/src/main/jniLibs/arm64-v8a
+          mkdir -p my-app/app/src/main/jniLibs/armeabi-v7a
+
+          # 1. Configuración de Gradle Raíz
+          cat << 'EOF' > my-app/build.gradle
+          buildscript {
+              repositories { google() \n mavenCentral() }
+              dependencies { classpath 'com.android.tools.build:gradle:7.4.2' }
+          }
+          allprojects { repositories { google() \n mavenCentral() } }
+          EOF
+
+          cat << 'EOF' > my-app/settings.gradle
+          include ':app'
+          EOF
+
+          # 2. Configuración de Gradle de la App
+          cat << 'EOF' > my-app/app/build.gradle
+          plugins { id 'com.android.application' }
+          android {
+              namespace 'com.wow.mobile'
+              compileSdk 33
+              defaultConfig {
+                  applicationId "com.wow.mobile"
+                  minSdk 21
+                  targetSdk 33
+                  versionCode 1
+                  versionName "1.0"
+              }
+          }
+          EOF
+
+          # 3. AndroidManifest mínimo
+          cat << 'EOF' > my-app/app/src/main/AndroidManifest.xml
+          <manifest xmlns:android="http://android.com">
+              <application android:label="WoW Mobile Client" android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+                  <activity android:name="com.wow.mobile.MainActivity" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          # 4. Cargador Java de la librería Nativa (.so)
+          cat << 'EOF' > my-app/app/src/main/java/com/wow/mobile/MainActivity.java
+          package com.wow.mobile;
+          import android.app.Activity;
+          import android.os.Bundle;
+
+          public class MainActivity extends Activity {
+              static {
+                  System.loadLibrary("kira");
+              }
+              @define
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+              }
+          }
+          EOF
+
+          # 5. Recursos mínimos para compilar
+          echo -e '<resources><string name="app_name">WoW Mobile</string></resources>' > my-app/app/src/main/res/values/strings.xml
+
+          # 6. Mover los .so compilados por Rust a la estructura del APK
+          find target/aarch64-linux-android/release/ -maxdepth 1 -name "*.so" -exec cp {} my-app/app/src/main/jniLibs/arm64-v8a/ \;
+          find target/armv7-linux-androideabi/release/ -maxdepth 1 -name "*.so" -exec cp {} my-app/app/src/main/jniLibs/armeabi-v7a/ \;
+          echo "✅ Entorno de la aplicación Android andamiaje completado."
+
+      - name: Descargar e Inicializar Wrapper de Gradle
+        run: |
+          set -euo pipefail
+          cd my-app
+          gradle wrapper --gradle-version 7.5
+
+      - name: Compilar Aplicación (Generar APK)
+        run: |
+          set -euo pipefail
+          cd my-app
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Subir APK Final para Jugar
         uses: actions/upload-artifact@v4
         with:
-          name: android-build-artifacts
-          path: target/aarch64-linux-android/release/
+          name: wow-mobile-launcher
+          path: my-app/app/build/outputs/apk/debug/*.apk
