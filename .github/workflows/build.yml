@@ -1,4 +1,4 @@
-name: Android Full Auto-App Build
+name: Android Full Native APK Build
 
 on:
   push:
@@ -19,17 +19,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Java JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
       - name: Configurar Android SDK e instalar NDK
         run: |
           set -uo pipefail
           export ANDROID_HOME=/usr/local/lib/android/sdk
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
           
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           yes | sudo $SDKMANAGER --licenses || echo "⚠️ Alerta en licencias."
@@ -38,13 +33,16 @@ jobs:
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android, armv7-linux-androideabi
+          targets: aarch64-linux-android
 
-      - name: Instalar dependencias del sistema
+      - name: Instalar dependencias del sistema y cargo-apk
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y pkg-config libasound2-dev libudev-dev clang lld file
+          
+          # Instalamos la herramienta nativa para empaquetar APKs desde Rust sin usar Gradle
+          cargo install cargo-apk
 
       - name: Extraer y acomodar fuentes de Benilla
         run: |
@@ -73,143 +71,28 @@ jobs:
             mv crates/benilla-app/src/textInput crates/benilla-app/src/textinput
           fi
 
-      - name: Forzar compilación de librería dinámica (.so) de forma segura
+      - name: Configurar metadatos de Android en Cargo.toml
         run: |
           set -euo pipefail
-          if grep -q "\[lib\]" Cargo.toml; then
-            echo "Se detectó la sección [lib] previa. Modificando crate-type..."
-            sed -i '/\[lib\]/a crate-type = ["cdylib"]' Cargo.toml
-          else
-            echo "No se detectó [lib]. Creando sección desde cero..."
-            echo "" >> Cargo.toml
-            echo "[lib]" >> Cargo.toml
-            echo 'crate-type = ["cdylib"]' >> Cargo.toml
-            echo 'name = "kira"' >> Cargo.toml
-          fi
+          # Inyectamos los metadatos necesarios de la app directamente en el Cargo.toml para cargo-apk
+          cat << 'EOF' >> Cargo.toml
 
-      - name: Configurar Linkers de Android para Cargo
-        run: |
-          mkdir -p .cargo
-          NDK_TOOLCHAIN="/usr/local/lib/android/sdk/ndk/25.2.9519653/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          
-          cat << EOF > .cargo/config.toml
-          [target.aarch64-linux-android]
-          linker = "$NDK_TOOLCHAIN/aarch64-linux-android33-clang"
+[package.metadata.android]
+package = "com.wow.mobile"
+label = "WoW Mobile"
+assets = "assets"
+min_sdk_version = 21
+target_sdk_version = 33
+EOF
 
-          [target.armv7-linux-androideabi]
-          linker = "$NDK_TOOLCHAIN/armv7a-linux-androideabi33-clang"
-          EOF
-
-      - name: Compilar Motores nativos (.so)
-        run: |
-          cargo build --release --target aarch64-linux-android
-          cargo build --release --target armv7-linux-androideabi
-
-      - name: Crear Proyecto Android Base desde Cero
+      - name: Compilar y Empaquetar APK de forma Nativa
         run: |
           set -euo pipefail
-          mkdir -p my-app/app/src/main/res/values
-          mkdir -p my-app/app/src/main/java/com/wow/mobile
-          mkdir -p my-app/app/src/main/jniLibs/arm64-v8a
-          mkdir -p my-app/app/src/main/jniLibs/armeabi-v7a
-
-          # 1. Configuración de Gradle con saltos de línea nativos reales sin \n literal
-          cat << 'EOF' > my-app/build.gradle
-          buildscript {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:8.1.4'
-              }
-          }
-          allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-          EOF
-
-          echo "include ':app'" > my-app/settings.gradle
-
-          # 2. Configuración de Gradle de la App limpia
-          cat << 'EOF' > my-app/app/build.gradle
-          plugins {
-              id 'com.android.application'
-          }
-          android {
-              namespace 'com.wow.mobile'
-              compileSdk 33
-              defaultConfig {
-                  applicationId 'com.wow.mobile'
-                  minSdk 21
-                  targetSdk 33
-                  versionCode 1
-                  versionName '1.0'
-              }
-          }
-          EOF
-
-          # 3. AndroidManifest mínimo
-          cat << 'EOF' > my-app/app/src/main/AndroidManifest.xml
-          <manifest xmlns:android="http://android.com">
-              <application android:label="WoW Mobile Client" android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
-                  <activity android:name="com.wow.mobile.MainActivity" android:exported="true">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-              </application>
-          </manifest>
-          EOF
-
-          # 4. Cargador Java de la librería Nativa (.so)
-          cat << 'EOF' > my-app/app/src/main/java/com/wow/mobile/MainActivity.java
-          package com.wow.mobile;
-          import android.app.Activity;
-          import android.os.Bundle;
-
-          public class MainActivity extends Activity {
-              static {
-                  System.loadLibrary("kira");
-              }
-              @Override
-              protected void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-              }
-          }
-          EOF
-
-          echo '<resources><string name="app_name">WoW Mobile</string></resources>' > my-app/app/src/main/res/values/strings.xml
-
-          # 5. Mover los .so compilados por Rust a la estructura del APK
-          find target/aarch64-linux-android/release/ -maxdepth 1 -name "*.so" -exec cp {} my-app/app/src/main/jniLibs/arm64-v8a/ \;
-          find target/armv7-linux-androideabi/release/ -maxdepth 1 -name "*.so" -exec cp {} my-app/app/src/main/jniLibs/armeabi-v7a/ \;
-          echo "✅ Entorno de la aplicación Android andamiaje completado."
-
-      - name: Inicializar Entorno de Compilación Nativo
-        run: |
-          set -euo pipefail
-          cd my-app
-          
-          cat << 'EOF' > gradlew
-          #!/bin/sh
-          exec gradle "$@"
-          EOF
-          chmod +x gradlew
-          echo "✅ Entorno de comandos de compilación configurado."
-
-      - name: Compilar Aplicación (Generar APK)
-        run: |
-          set -euo pipefail
-          cd my-app
-          ./gradlew assembleDebug
+          # Compilación directa a APK usando el compilador nativo de Rust para Android
+          ANDROID_NDK_ROOT=$NDK_HOME cargo apk build --release --target aarch64-linux-android
 
       - name: Subir APK Final para Jugar
         uses: actions/upload-artifact@v4
         with:
-          name: wow-mobile-launcher
-          path: my-app/app/build/outputs/apk/debug/*.apk
+          name: wow-mobile-launcher-native
+          path: target/aarch64-linux-android/release/apk/*.apk
