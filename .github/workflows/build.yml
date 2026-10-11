@@ -27,6 +27,9 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # Instalamos de forma limpia cmdline-tools modernos, platform-tools y el NDK necesario por Rust
+          packages: 'cmdline-tools;latest platform-tools ndk;25.2.9519653'
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -77,23 +80,27 @@ jobs:
       - name: Configurar Linkers de Android para Cargo
         run: |
           mkdir -p .cargo
-          cat << 'EOF' > .cargo/config.toml
+          
+          # Encontrar la ruta del compilador del NDK instalado por el paso previo
+          NDK_TOOLCHAIN="$ANDROID_HOME/ndk/25.2.9519653/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          
+          cat << EOF > .cargo/config.toml
           [target.aarch64-linux-android]
-          linker = "aarch64-linux-android31-clang"
+          linker = "$NDK_TOOLCHAIN/aarch64-linux-android31-clang"
 
           [target.armv7-linux-androideabi]
-          linker = "armv7-linux-androideabi31-clang"
+          linker = "$NDK_TOOLCHAIN/armv7-linux-androideabi31-clang"
 
           [target.x86_64-linux-android]
-          linker = "x86_64-linux-android31-clang"
+          linker = "$NDK_TOOLCHAIN/x86_64-linux-android31-clang"
 
           [target.i686-linux-android]
-          linker = "i686-linux-android31-clang"
+          linker = "$NDK_TOOLCHAIN/i686-linux-android31-clang"
           EOF
 
       - name: Compilar proyecto (Rust / Cargo)
         run: |
-          # Compilación de la librería Rust orientada a la arquitectura móvil principal
+          # Compilación orientada a la arquitectura móvil principal
           cargo build --release --target aarch64-linux-android
 
       - name: Subir artefactos compilados
