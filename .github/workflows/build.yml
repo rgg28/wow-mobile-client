@@ -52,50 +52,53 @@ jobs:
             libudev-dev \
             clang \
             lld \
-            file \
-            rsync
+            file
 
       - name: Extraer y acomodar fuentes de Benilla
         run: |
           set -euo pipefail
 
           if [ -f benilla.zip ]; then
-            mkdir -p /tmp/benilla-source
-            
-            python3 -c "import zipfile; zipfile.ZipFile('benilla.zip').extractall('/tmp/benilla-source')"
+            python3 -c "
+import zipfile, os, shutil
 
-            echo "=== 📁 Estructura extraída internamente ==="
-            ls -la /tmp/benilla-source/
-            
-            ROOT="$(find /tmp/benilla-source -name Cargo.toml -type f -print -quit)"
+with zipfile.ZipFile('benilla.zip', 'r') as zip_ref:
+    zip_ref.extractall('/tmp/benilla-source')
 
-            if [ -z "$ROOT" ]; then
-              echo "::error::No se encontró Cargo.toml dentro del archivo benilla.zip"
-              exit 1
-            fi
+source_dir = None
+for root, dirs, files in os.walk('/tmp/benilla-source'):
+    if 'Cargo.toml' in files:
+        source_dir = root
+        break
 
-            SOURCE_DIR="$(dirname "$ROOT")"
-            rsync -a "$SOURCE_DIR/" .
-            
-            if [ -d "crates/benilla-app/src/textInput" ]; then
-              mv crates/benilla-app/src/textInput crates/benilla-app/src/textinput
-            fi
+if not source_dir:
+    print('::error::No se encontró Cargo.toml en el ZIP')
+    exit(1)
+
+for item in os.listdir(source_dir):
+    s = os.path.join(source_dir, item)
+    d = os.path.join('.', item)
+    if os.path.isdir(s):
+        if os.path.exists(d):
+            shutil.rmtree(d)
+        shutil.move(s, d)
+    else:
+        shutil.move(s, d)
+
+print('✅ Fuentes reacomodadas con éxito en la raíz.')
+"
           else
             echo "::error::El archivo benilla.zip no fue detectado en la raíz del repositorio."
             exit 1
           fi
 
           echo "=== 📁 Validando y forzando rutas de archivos ==="
-          CLIPBOARD_PATH=$(find crates/ -iname "clipboard.rs" -type f -print -quit)
-          
-          if [ -z "$CLIPBOARD_PATH" ]; then
-            echo "::error::No se encontró el archivo clipboard.rs en ninguna subcarpeta de crates/"
-            exit 1
+          if [ -d "crates/benilla-app/src/textInput" ]; then
+            mv crates/benilla-app/src/textInput crates/benilla-app/src/textinput
           fi
 
-          mkdir -p crates/benilla-app/src/textinput
           test -f Cargo.toml
-          test -f crates/benilla-app/Cargo.toml
+          test -d crates
 
       - name: Configurar Linkers de Android para Cargo
         run: |
