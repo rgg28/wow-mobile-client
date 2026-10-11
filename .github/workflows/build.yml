@@ -76,7 +76,6 @@ jobs:
       - name: Forzar compilación de librería dinámica (.so)
         run: |
           set -euo pipefail
-          # Modificar el Cargo.toml al vuelo para asegurar la exportación cdylib si falta
           if ! grep -q 'crate-type = \["cdylib"\]' Cargo.toml; then
             cat << 'EOF' >> Cargo.toml
 
@@ -153,7 +152,7 @@ EOF
           </manifest>
           EOF
 
-          # 4. Cargador Java de la librería Nativa (.so)
+          # 4. Cargador Java de la librería Nativa (.so) sin caracteres invalidos de YAML
           cat << 'EOF' > my-app/app/src/main/java/com/wow/mobile/MainActivity.java
           package com.wow.mobile;
           import android.app.Activity;
@@ -163,7 +162,7 @@ EOF
               static {
                   System.loadLibrary("kira");
               }
-              @define
+              @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
               }
