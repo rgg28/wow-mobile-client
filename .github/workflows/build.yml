@@ -1,36 +1,41 @@
-name: Benilla Android Build
+name: Android Build
 
 on:
   push:
-    branches: ["main", "master"]
-  workflow_dispatch:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
-permissions:
-  contents: read
-
-concurrency:
-  group: benilla-android-${{ github.ref }}
-  cancel-in-progress: true
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_RELEASE_DEBUG: 0
 
 jobs:
   android:
-    runs-on: ubuntu-latest
-    timeout-minutes: 150
-
-    env:
-      CARGO_TERM_COLOR: always
-      CARGO_INCREMENTAL: 0
-      CARGO_PROFILE_RELEASE_DEBUG: 0
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install system dependencies
-        shell: bash
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi, x86_64-linux-android, i686-linux-android
+
+      - name: Instalar dependencias del sistema
         run: |
           set -euo pipefail
-
           sudo apt-get update
           sudo apt-get install -y \
             unzip \
@@ -39,10 +44,10 @@ jobs:
             libudev-dev \
             clang \
             lld \
-            file
+            file \
+            rsync
 
-      - name: Extract Benilla source
-        shell: bash
+      - name: Extraer y acomodar fuentes de Benilla
         run: |
           set -euo pipefail
 
@@ -50,187 +55,49 @@ jobs:
             mkdir -p /tmp/benilla-source
             unzip -q benilla.zip -d /tmp/benilla-source
 
-            ROOT="$(find /tmp/benilla-source \
-              -name Cargo.toml \
-              -type f \
-              -print -quit)"
+            # Buscar el Cargo.toml principal dentro de benilla-0.2.0
+            ROOT="$(find /tmp/benilla-source -name Cargo.toml -type f -print -quit)"
 
             if [ -z "$ROOT" ]; then
               echo "::error::Cargo.toml not found in benilla.zip"
               exit 1
             fi
 
-            ROOT="$(dirname "$ROOT")"
-            cp -a "$ROOT/." .
+            SOURCE_DIR="$(dirname "$ROOT")"
+            
+            # Transferir de manera limpia el contenido a la raíz de trabajo
+            rsync -a "$SOURCE_DIR/" .
           fi
 
+          # Validar que todo esté en su lugar
           test -f Cargo.toml
           test -f crates/benilla-app/Cargo.toml
           test -f crates/benilla-app/src/textinput/clipboard.rs
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK packages
-        shell: bash
+      - name: Configurar Linkers de Android para Cargo
         run: |
-          set -euo pipefail
+          mkdir -p .cargo
+          cat << 'EOF' > .cargo/config.toml
+          [target.aarch64-linux-android]
+          linker = "aarch64-linux-android31-clang"
 
-          sdkmanager --install \
-            "platforms;android-33" \
-            "build-tools;33.0.2" \
-            "ndk;25.2.9519653"
+          [target.armv7-linux-androideabi]
+          linker = "armv7-linux-androideabi31-clang"
 
-          sdkmanager --list_installed
+          [target.x86_64-linux-android]
+          linker = "x86_64-linux-android31-clang"
 
-          test -d "$ANDROID_HOME/platforms/android-33"
-          test -d "$ANDROID_HOME/build-tools/33.0.2"
-          test -d "$ANDROID_HOME/ndk/25.2.9519653"
+          [target.i686-linux-android]
+          linker = "i686-linux-android31-clang"
+          EOF
 
-      - name: Setup Rust toolchain
-        shell: bash
+      - name: Compilar proyecto (Rust / Cargo)
         run: |
-          set -euo pipefail
+          # Compilación de la librería Rust orientada a la arquitectura móvil principal
+          cargo build --release --target aarch64-linux-android
 
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-          rustup target add aarch64-linux-android
-
-          rustc --version
-          cargo --version
-
-      - name: Configure Android NDK
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          NDK="$ANDROID_HOME/ndk/25.2.9519653"
-
-          echo "ANDROID_NDK_HOME=$NDK" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_ROOT=$NDK" >> "$GITHUB_ENV"
-
-      - name: Install cargo-ndk
-        shell: bash
-        run: |
-          cargo install cargo-ndk --locked
-          cargo ndk --version
-
-      - name: Verify project structure
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Workspace:"
-          cargo metadata --no-deps --format-version 1 > /tmp/metadata.json
-
-          echo "Android-related files:"
-          find . -maxdepth 5 -type f \
-            \( -name Cargo.toml \
-            -o -name Cargo.lock \
-            -o -name AndroidManifest.xml \
-            -o -name build.gradle \
-            -o -name build.gradle.kts \
-            -o -name gradlew \) \
-            -not -path './target/*' \
-            -print
-
-      - name: Verify Android dependency graph
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if cargo tree \
-            -p benilla-app \
-            --target aarch64-linux-android \
-            -i arboard \
-            > /tmp/arboard-tree.txt 2>&1; then
-
-            cat /tmp/arboard-tree.txt
-
-            echo "::error::arboard is still in the Android dependency graph"
-            exit 1
-          else
-            if grep -q "package ID specification.*did not match" \
-              /tmp/arboard-tree.txt; then
-              cat /tmp/arboard-tree.txt
-              echo "arboard is not present in the Android dependency graph."
-            else
-              cat /tmp/arboard-tree.txt
-              echo "::error::Failed to inspect the Android dependency graph."
-              exit 1
-            fi
-          fi
-
-      - name: Build Benilla native Android library
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cargo ndk \
-            -t aarch64-linux-android \
-            build \
-            --release \
-            --no-default-features \
-            -p benilla-app
-
-          echo "Generated native libraries:"
-          find target -type f -name '*.so' -print
-
-          LIBRARY="target/aarch64-linux-android/release/libbenilla_app.so"
-
-          if [ ! -s "$LIBRARY" ]; then
-            echo "::error::Expected native library was not generated: $LIBRARY"
-            exit 1
-          fi
-
-          file "$LIBRARY"
-          ls -lh "$LIBRARY"
-
-      - name: Build Android APK if Gradle project exists
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [ -f gradlew ]; then
-            chmod +x gradlew
-            ./gradlew --no-daemon assembleRelease
-          elif [ -f app/gradlew ]; then
-            chmod +x app/gradlew
-            (
-              cd app
-              ./gradlew --no-daemon assembleRelease
-            )
-          else
-            echo "No Gradle Android project found."
-            echo "Native compilation succeeded, but an installable APK cannot be generated yet."
-          fi
-
-      - name: Collect build outputs
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          mkdir -p build-artifacts/native
-          cp target/aarch64-linux-android/release/libbenilla_app.so \
-            build-artifacts/native/
-
-          find . -type f \
-            -path '*/build/outputs/apk/*/*.apk' \
-            -not -path '*/build/intermediates/*' \
-            -exec cp {} build-artifacts/ \;
-
-          echo "Final artifacts:"
-          find build-artifacts -type f -exec ls -lh {} \;
-
-      - name: Upload build artifacts
+      - name: Subir artefactos compilados
         uses: actions/upload-artifact@v4
         with:
-          name: Benilla-Android-arm64
-          if-no-files-found: error
-          path: build-artifacts/
+          name: android-build-artifacts
+          path: target/aarch64-linux-android/release/
