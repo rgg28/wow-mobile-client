@@ -54,7 +54,7 @@ jobs:
             lld \
             file
 
-            - name: Extraer y acomodar fuentes de Benilla
+      - name: Extraer y acomodar fuentes de Benilla
         run: |
           set -euo pipefail
 
