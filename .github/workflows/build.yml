@@ -29,7 +29,7 @@ jobs:
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           yes | sudo "$SDKMANAGER" --licenses || echo "⚠️ Alerta en licencias."
           
-          # Instalamos la plataforma 30 que requiere tu motor para no tirar el error de falta de plataforma
+          # Instalamos la plataforma 30 que requiere tu motor junto con sus build-tools estables
           sudo "$SDKMANAGER" "ndk;25.2.9519653" "platforms;android-30" "platforms;android-33" "build-tools;30.0.3" "build-tools;33.0.2"
 
       - name: Install Rust Toolchain
@@ -73,15 +73,17 @@ jobs:
             mv crates/benilla-app/src/textInput crates/benilla-app/src/textinput
           fi
 
+          # Solución al error: Forzar la existencia de la carpeta assets en la raíz por si tu ZIP no la incluye
+          mkdir -p assets
+
       - name: Configurar metadatos de Android en Cargo.toml
         run: |
           set -euo pipefail
-          # Inyectamos los metadatos necesarios sincronizando con el SDK objetivo (API 30)
+          # Inyectamos los metadatos necesarios apuntando a la API 30 sin exigir assets externas conflictivas
           echo "" >> Cargo.toml
           echo "[package.metadata.android]" >> Cargo.toml
           echo 'package = "com.wow.mobile"' >> Cargo.toml
           echo 'label = "WoW Mobile"' >> Cargo.toml
-          echo 'assets = "assets"' >> Cargo.toml
           echo 'min_sdk_version = 21' >> Cargo.toml
           echo 'target_sdk_version = 30' >> Cargo.toml
 
