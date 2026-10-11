@@ -25,11 +25,15 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
+      - name: Setup Android SDK Base
         uses: android-actions/setup-android@v3
-        with:
-          # Instalamos de forma limpia cmdline-tools modernos, platform-tools y el NDK necesario por Rust
-          packages: 'cmdline-tools;latest platform-tools ndk;25.2.9519653'
+
+      - name: Instalar Android NDK de forma dedicada
+        run: |
+          set -euo pipefail
+          # Aceptar licencias e instalar la versión estable del NDK que requiere Rust
+          yes | sdkmanager --licenses || true
+          sdkmanager "ndk;25.2.9519653"
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -72,7 +76,7 @@ jobs:
             rsync -a "$SOURCE_DIR/" .
           fi
 
-          # Validar que todo esté en su lugar
+          # Validar que todo esté en su lugar de forma correcta
           test -f Cargo.toml
           test -f crates/benilla-app/Cargo.toml
           test -f crates/benilla-app/src/textinput/clipboard.rs
@@ -81,7 +85,7 @@ jobs:
         run: |
           mkdir -p .cargo
           
-          # Encontrar la ruta del compilador del NDK instalado por el paso previo
+          # Encontrar la ruta del compilador del NDK instalado
           NDK_TOOLCHAIN="$ANDROID_HOME/ndk/25.2.9519653/toolchains/llvm/prebuilt/linux-x86_64/bin"
           
           cat << EOF > .cargo/config.toml
@@ -100,7 +104,7 @@ jobs:
 
       - name: Compilar proyecto (Rust / Cargo)
         run: |
-          # Compilación orientada a la arquitectura móvil principal
+          # Compilación orientada a la arquitectura móvil principal de Android
           cargo build --release --target aarch64-linux-android
 
       - name: Subir artefactos compilados
