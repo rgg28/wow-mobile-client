@@ -169,6 +169,7 @@ jobs:
 
           echo '<resources><string name="app_name">WoW Mobile</string></resources>' > my-app/app/src/main/res/values/strings.xml
 
+          # 5. Mover los .so compilados por Rust a la estructura del APK
           find target/aarch64-linux-android/release/ -maxdepth 1 -name "*.so" -exec cp {} my-app/app/src/main/jniLibs/arm64-v8a/ \;
           find target/armv7-linux-androideabi/release/ -maxdepth 1 -name "*.so" -exec cp {} my-app/app/src/main/jniLibs/armeabi-v7a/ \;
           echo "✅ Entorno de la aplicación Android andamiaje completado."
@@ -178,7 +179,7 @@ jobs:
           set -euo pipefail
           cd my-app
           
-          # Descargamos los archivos de Gradle de forma manual en lugar de invocar comandos del sistema
+          # Configurar propiedades del Wrapper
           mkdir -p gradle/wrapper
           cat << EOF > gradle/wrapper/gradle-wrapper.properties
           distributionBase=GRADLE_USER_HOME
@@ -188,15 +189,15 @@ jobs:
           zipStorePath=wrapper/dists
           EOF
           
-          # Descarga el ejecutable local para compilar de forma limpia
-          wget -q https://githubusercontent.com -O gradlew
-          chmod +x gradlew
-          echo "✅ Entorno Gradle corregido y forzado a la versión 7.5."
+          # En lugar de descargar gradlew con wget, usamos un comando interno de Gradle para generarlo de forma segura
+          gradle wrapper --gradle-version 7.5
+          echo "✅ Entorno Gradle inicializado sin descargas conflictivas."
 
       - name: Compilar Aplicación (Generar APK)
         run: |
           set -euo pipefail
           cd my-app
+          chmod +x gradlew
           ./gradlew assembleDebug
 
       - name: Subir APK Final para Jugar
