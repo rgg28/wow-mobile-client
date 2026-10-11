@@ -28,7 +28,9 @@ jobs:
           
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           yes | sudo "$SDKMANAGER" --licenses || echo "⚠️ Alerta en licencias."
-          sudo "$SDKMANAGER" "ndk;25.2.9519653" "platforms;android-33" "build-tools;33.0.2"
+          
+          # Instalamos la plataforma 30 que requiere tu motor para no tirar el error de falta de plataforma
+          sudo "$SDKMANAGER" "ndk;25.2.9519653" "platforms;android-30" "platforms;android-33" "build-tools;30.0.3" "build-tools;33.0.2"
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -74,14 +76,14 @@ jobs:
       - name: Configurar metadatos de Android en Cargo.toml
         run: |
           set -euo pipefail
-          # Inyectamos los metadatos necesarios de la app directamente en el Cargo.toml para cargo-apk
+          # Inyectamos los metadatos necesarios sincronizando con el SDK objetivo (API 30)
           echo "" >> Cargo.toml
           echo "[package.metadata.android]" >> Cargo.toml
           echo 'package = "com.wow.mobile"' >> Cargo.toml
           echo 'label = "WoW Mobile"' >> Cargo.toml
           echo 'assets = "assets"' >> Cargo.toml
           echo 'min_sdk_version = 21' >> Cargo.toml
-          echo 'target_sdk_version = 33' >> Cargo.toml
+          echo 'target_sdk_version = 30' >> Cargo.toml
 
       - name: Compilar y Empaquetar APK de forma Nativa
         run: |
