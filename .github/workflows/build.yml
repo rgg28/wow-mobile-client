@@ -73,10 +73,15 @@ jobs:
             mv crates/benilla-app/src/textInput crates/benilla-app/src/textinput
           fi
 
-      - name: Forzar compilación de librería dinámica (.so)
+      - name: Forzar compilación de librería dinámica (.so) de forma segura
         run: |
           set -euo pipefail
-          if ! grep -q 'crate-type = \["cdylib"\]' Cargo.toml; then
+          # Comprobación inteligente: si ya existe [lib], inyectamos la línea abajo de ella de forma segura
+          if grep -q "\[lib\]" Cargo.toml; then
+            echo "Se detectó la sección [lib] previa. Modificando crate-type..."
+            sed -i '/\[lib\]/a crate-type = ["cdylib"]' Cargo.toml
+          else
+            echo "No se detectó [lib]. Creando sección desde cero..."
             echo "" >> Cargo.toml
             echo "[lib]" >> Cargo.toml
             echo 'crate-type = ["cdylib"]' >> Cargo.toml
@@ -107,7 +112,6 @@ jobs:
           mkdir -p my-app/app/src/main/jniLibs/arm64-v8a
           mkdir -p my-app/app/src/main/jniLibs/armeabi-v7a
 
-          # 1. Configuración de Gradle Raíz sin barras invertidas conflictivas
           echo "buildscript {" > my-app/build.gradle
           echo "    repositories { google(); mavenCentral() }" >> my-app/build.gradle
           echo "    dependencies { classpath 'com.android.tools.build:gradle:7.4.2' }" >> my-app/build.gradle
@@ -116,7 +120,6 @@ jobs:
 
           echo "include ':app'" > my-app/settings.gradle
 
-          # 2. Configuración de Gradle de la App
           echo "plugins { id 'com.android.application' }" > my-app/app/build.gradle
           echo "android {" >> my-app/app/build.gradle
           echo "    namespace 'com.wow.mobile'" >> my-app/app/build.gradle
@@ -130,7 +133,6 @@ jobs:
           echo "    }" >> my-app/app/build.gradle
           echo "}" >> my-app/app/build.gradle
 
-          # 3. AndroidManifest mínimo
           cat << 'EOF' > my-app/app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://android.com">
               <application android:label="WoW Mobile Client" android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
@@ -144,7 +146,6 @@ jobs:
           </manifest>
           EOF
 
-          # 4. Cargador Java de la librería Nativa (.so) limpio
           cat << 'EOF' > my-app/app/src/main/java/com/wow/mobile/MainActivity.java
           package com.wow.mobile;
           import android.app.Activity;
@@ -161,10 +162,8 @@ jobs:
           }
           EOF
 
-          # 5. Recursos mínimos para compilar
           echo '<resources><string name="app_name">WoW Mobile</string></resources>' > my-app/app/src/main/res/values/strings.xml
 
-          # 6. Mover los .so compilados por Rust a la estructura del APK
           find target/aarch64-linux-android/release/ -maxdepth 1 -name "*.so" -exec cp {} my-app/app/src/main/jniLibs/arm64-v8a/ \;
           find target/armv7-linux-androideabi/release/ -maxdepth 1 -name "*.so" -exec cp {} my-app/app/src/main/jniLibs/armeabi-v7a/ \;
           echo "✅ Entorno de la aplicación Android andamiaje completado."
