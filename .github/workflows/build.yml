@@ -30,7 +30,7 @@ jobs:
           set -uo pipefail
           
           export ANDROID_HOME=/usr/local/lib/android/sdk
-          echo "ANDROID_HOME=$ANDROID_ENV" >> $GITHUB_ENV
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           
