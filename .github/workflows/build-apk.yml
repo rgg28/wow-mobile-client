@@ -33,16 +33,20 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    - name: Configurar Entorno Android SDK
-      uses: android-actions/setup-android@v3
+    - name: Configurar Variables de Entorno del Android SDK
+      run: |
+        echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
+        echo "ANDROID_NDK_HOME=/usr/local/lib/android/sdk/ndk/25.1.8937393" >> $GITHUB_ENV
+        echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+        echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
 
     - name: Aceptar Licencias de Android e Instalar Herramientas Correctas
       run: |
-        # Forzar la aceptación de licencias obligatorias de Google de forma automatizada
-        yes | sdkmanager --licenses
+        # Usamos el sdkmanager nativo del sistema apuntando a la ruta más reciente
+        yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses
         
-        # Instalar la versión estable del NDK y CMake sin depender del paquete 'tools' obsoleto
-        sdkmanager --install "ndk;25.1.8937393" "cmake;3.22.1" "cmdline-tools;latest"
+        # Instalamos el NDK y CMake sin la acción de terceros rota
+        /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --install "ndk;25.1.8937393" "cmake;3.22.1"
 
     - name: Conceder permisos de ejecución a Gradle
       run: chmod +x gradlew
