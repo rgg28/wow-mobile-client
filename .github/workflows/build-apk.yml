@@ -1,0 +1,63 @@
+name: Compilar APK WoW Android (Snapdragon 695)
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Descargar el repositorio de GitHub
+      uses: actions/checkout@v4
+
+    - name: Instalar herramientas de descompresión
+      run: sudo apt-get update && sudo apt-get install -y unzip
+
+    - name: Descomprimir el proyecto wow-forever-android.zip
+      run: |
+        unzip -o wow-forever-android.zip -d ./project_extracted
+        # Mover los archivos a la raíz de ejecución si venían dentro de una subcarpeta raíz en el zip
+        if [ -d "./project_extracted/wow-forever-android" ]; then
+          mv ./project_extracted/wow-forever-android/* ./
+        else
+          mv ./project_extracted/* ./
+        fi
+        rm -rf project_extracted wow-forever-android.zip
+
+    - name: Configurar Java JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Configurar Entorno Android SDK y NDK
+      uses: android-actions/setup-android@v3
+
+    - name: Instalar NDK y CMake específicos
+      run: |
+        sdkmanager --install "ndk;25.1.8937393" "cmake;3.22.1"
+
+    - name: Conceder permisos de ejecución a Gradle
+      run: chmod +x gradlew
+      continue-on-error: true
+
+    - name: Compilar APK en modo Release con optimizaciones nativas
+      env:
+        ANDROID_NDK_HOME: ${{ steps.setup-android.outputs.sdk-path }}/ndk/25.1.8937393
+      run: |
+        # Usamos la instalación local si existe gradlew, de lo contrario invocamos gradle global
+        if [ -f "./gradlew" ]; then
+          ./gradlew assembleRelease --no-daemon
+        else
+          gradle assembleRelease --no-daemon
+        fi
+
+    - name: Subir el archivo APK compilado como artefacto
+      uses: actions/upload-artifact@v4
+      with:
+        name: wow-forever-android-sd695
+        path: app/build/outputs/apk/release/*.apk
