@@ -19,7 +19,6 @@ jobs:
     - name: Descomprimir el proyecto wow-forever-android.zip
       run: |
         unzip -o wow-forever-android.zip -d ./project_extracted
-        # Mover los archivos a la raíz de ejecución si venían dentro de una subcarpeta raíz en el zip
         if [ -d "./project_extracted/wow-forever-android" ]; then
           mv ./project_extracted/wow-forever-android/* ./
         else
@@ -34,22 +33,23 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    - name: Configurar Entorno Android SDK y NDK
+    - name: Configurar Entorno Android SDK
       uses: android-actions/setup-android@v3
 
-    - name: Instalar NDK y CMake específicos
+    - name: Aceptar Licencias de Android e Instalar Herramientas Correctas
       run: |
-        sdkmanager --install "ndk;25.1.8937393" "cmake;3.22.1"
+        # Forzar la aceptación de licencias obligatorias de Google de forma automatizada
+        yes | sdkmanager --licenses
+        
+        # Instalar la versión estable del NDK y CMake sin depender del paquete 'tools' obsoleto
+        sdkmanager --install "ndk;25.1.8937393" "cmake;3.22.1" "cmdline-tools;latest"
 
     - name: Conceder permisos de ejecución a Gradle
       run: chmod +x gradlew
       continue-on-error: true
 
     - name: Compilar APK en modo Release con optimizaciones nativas
-      env:
-        ANDROID_NDK_HOME: ${{ steps.setup-android.outputs.sdk-path }}/ndk/25.1.8937393
       run: |
-        # Usamos la instalación local si existe gradlew, de lo contrario invocamos gradle global
         if [ -f "./gradlew" ]; then
           ./gradlew assembleRelease --no-daemon
         else
