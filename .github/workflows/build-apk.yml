@@ -19,10 +19,11 @@ jobs:
     - name: Descomprimir el proyecto wow-forever-android.zip
       run: |
         unzip -o wow-forever-android.zip -d ./project_extracted
+        # Normalizar la estructura: mover los archivos a la raíz exacta del contenedor de trabajo actual
         if [ -d "./project_extracted/wow-forever-android" ]; then
-          mv ./project_extracted/wow-forever-android/* ./
+          cp -r ./project_extracted/wow-forever-android/* ./
         else
-          mv ./project_extracted/* ./
+          cp -r ./project_extracted/* ./
         fi
         rm -rf project_extracted wow-forever-android.zip
 
@@ -42,11 +43,19 @@ jobs:
 
     - name: Aceptar Licencias de Android e Instalar Herramientas Correctas
       run: |
-        # Usamos el sdkmanager nativo del sistema apuntando a la ruta más reciente
         yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses
-        
-        # Instalamos el NDK y CMake sin la acción de terceros rota
         /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --install "ndk;25.1.8937393" "cmake;3.22.1"
+
+    - name: Inyectar archivos de propiedades en todas las rutas posibles
+      run: |
+        # Escribir local.properties en la raíz del espacio de trabajo actual
+        echo "sdk.dir=/usr/local/lib/android/sdk" > local.properties
+        echo "ndk.dir=/usr/local/lib/android/sdk/ndk/25.1.8937393" >> local.properties
+        
+        # Duplicar el archivo de propiedades dentro de la carpeta /app por si el script build.gradle.kts realiza una búsqueda relativa
+        if [ -d "app" ]; then
+          cp local.properties app/local.properties
+        fi
 
     - name: Conceder permisos de ejecución a Gradle
       run: chmod +x gradlew
@@ -64,4 +73,6 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: wow-forever-android-sd695
-        path: app/build/outputs/apk/release/*.apk
+        path: |
+          **/build/outputs/apk/release/*.apk
+          app/build/outputs/apk/release/*.apk
