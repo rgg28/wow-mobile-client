@@ -27,6 +27,17 @@ jobs:
         fi
         rm -rf project_extracted wow-forever-android.zip
 
+    - name: Remover permanentemente la referencia de Frame Generation
+      run: |
+        TARGET_FILE="app/src/main/java/app/gamenative/ui/screen/xserver/XServerScreen.kt"
+        if [ -f "$TARGET_FILE" ]; then
+          echo "Limpiando referencias residuales en XServerScreen.kt..."
+          # Elimina por completo cualquier línea que intente invocar setFrameGenerationArmed
+          sed -i '/setFrameGenerationArmed/d' "$TARGET_FILE"
+        else
+          echo "Advertencia: No se encontró el archivo en $TARGET_FILE para remover la línea."
+        fi
+
     - name: Configurar Java JDK 17
       uses: actions/setup-java@v4
       with:
@@ -64,9 +75,9 @@ jobs:
     - name: Compilar APK en modo Release con optimizaciones nativas
       run: |
         if [ -f "./gradlew" ]; then
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew clean assembleRelease --no-daemon --no-build-cache
         else
-          gradle assembleRelease --no-daemon
+          gradle clean assembleRelease --no-daemon --no-build-cache
         fi
 
     - name: Subir el archivo APK compilado como artefacto
