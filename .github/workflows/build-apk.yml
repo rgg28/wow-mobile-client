@@ -2,89 +2,213 @@ name: Compilar APK WoW Android (Snapdragon 695)
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches:
+      - main
+      - master
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
 
     steps:
-    - name: Descargar el repositorio de GitHub
-      uses: actions/checkout@v4
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
 
-    - name: Instalar herramientas de descompresión
-      run: sudo apt-get update && sudo apt-get install -y unzip
+      - name: Instalar herramientas de descompresión
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip
 
-    - name: Descomprimir el proyecto wow-forever-android.zip
-      run: |
-        unzip -o wow-forever-android.zip -d ./project_extracted
-        # Normalizar la estructura: mover los archivos a la raíz exacta del contenedor de trabajo actual
-        if [ -d "./project_extracted/wow-forever-android" ]; then
-          cp -r ./project_extracted/wow-forever-android/* ./
-        else
-          cp -r ./project_extracted/* ./
-        fi
-        rm -rf project_extracted wow-forever-android.zip
+      - name: Extraer el proyecto WoW Forever
+        shell: bash
+        run: |
+          set -euo pipefail
 
-    - name: Remover permanentemente la referencia de Frame Generation
-      run: |
-        TARGET_FILE="app/src/main/java/app/gamenative/ui/screen/xserver/XServerScreen.kt"
-        if [ -f "$TARGET_FILE" ]; then
-          echo "Limpiando referencias residuales en XServerScreen.kt..."
-          # Elimina por completo cualquier línea que intente invocar setFrameGenerationArmed
-          sed -i '/setFrameGenerationArmed/d' "$TARGET_FILE"
-        else
-          echo "Advertencia: No se encontró el archivo en $TARGET_FILE para remover la línea."
-        fi
+          if [ ! -f "wow-forever-android.zip" ]; then
+            echo "::error::No se encontró wow-forever-android.zip en la raíz del repositorio."
+            exit 1
+          fi
 
-    - name: Configurar Java JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        cache: gradle
+          mkdir -p project_extracted
+          unzip -o wow-forever-android.zip -d project_extracted
 
-    - name: Configurar Variables de Entorno del Android SDK
-      run: |
-        echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
-        echo "ANDROID_NDK_HOME=/usr/local/lib/android/sdk/ndk/27.3.13750724" >> $GITHUB_ENV
-        echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
-        echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
+          if [ -d "project_extracted/wow-forever-android" ]; then
+            cp -a project_extracted/wow-forever-android/. ./
+          else
+            cp -a project_extracted/. ./
+          fi
 
-    - name: Aceptar Licencias de Android e Instalar Herramientas Correctas
-      run: |
-        yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses
-        # Descarga la versión exacta del NDK 27 requerida por el código nativo
-        /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --install "ndk;27.3.13750724" "cmake;3.22.1"
+          rm -rf project_extracted wow-forever-android.zip
 
-    - name: Inyectar archivos de propiedades en todas las rutas posibles
-      run: |
-        # Se inyecta solo sdk.dir. Dejamos que ndkVersion en el build.gradle.kts controle el NDK
-        # para solucionar de manera limpia la advertencia de obsolescencia [CXX5106]
-        echo "sdk.dir=/usr/local/lib/android/sdk" > local.properties
-        
-        # Duplicar el archivo de propiedades dentro de la carpeta /app por si el script realiza una búsqueda relativa
-        if [ -d "app" ]; then
-          cp local.properties app/local.properties
-        fi
+          if [ ! -f "gradlew" ]; then
+            echo "::error::No se encontró gradlew después de extraer el proyecto."
+            find . -maxdepth 3 -name gradlew -print
+            exit 1
+          fi
 
-    - name: Conceder permisos de ejecución a Gradle
-      run: chmod +x gradlew
-      continue-on-error: true
+          chmod +x gradlew
 
-    - name: Compilar APK en modo Release con optimizaciones nativas
-      run: |
-        if [ -f "./gradlew" ]; then
-          ./gradlew clean assembleRelease --no-daemon --no-build-cache
-        else
-          gradle clean assembleRelease --no-daemon --no-build-cache
-        fi
+      - name: Corregir compatibilidad de KSP y Kotlin Reflect
+        shell: bash
+        run: |
+          set -euo pipefail
 
-    - name: Subir el archivo APK compilado como artefacto
-      uses: actions/upload-artifact@v4
-      with:
-        name: wow-forever-android-sd695
-        path: |
-          **/build/outputs/apk/release/*.apk
-          app/build/outputs/apk/release/*.apk
+          TOML="gradle/libs.versions.toml"
+          BUILD="app/build.gradle.kts"
+
+          if [ ! -f "$TOML" ]; then
+            echo "::error::No se encontró $TOML"
+            exit 1
+          fi
+
+          if [ ! -f "$BUILD" ]; then
+            echo "::error::No se encontró $BUILD"
+            exit 1
+          fi
+
+          # Aplicar el ajuste DESPUÉS de extraer el ZIP, que puede
+          # sobrescribir las versiones guardadas en el repositorio.
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path("gradle/libs.versions.toml")
+          content = path.read_text(encoding="utf-8")
+
+          match = re.search(
+              r"(?ms)^\[versions\]\s*$.*?(?=^\[|\Z)",
+              content
+          )
+
+          if not match:
+              raise SystemExit("No se encontró la sección [versions] en libs.versions.toml")
+
+          section = match.group(0)
+          pattern = r'(?m)^(\s*ksp\s*=\s*")[^"]+(".*)$'
+
+          if not re.search(pattern, section):
+              raise SystemExit("No se encontró la versión ksp dentro de [versions]")
+
+          section = re.sub(pattern, r'\g<1>2.1.21-2.0.1\g<2>', section, count=1)
+          content = content[:match.start()] + section + content[match.end():]
+          path.write_text(content, encoding="utf-8")
+
+          build = Path("app/build.gradle.kts")
+          text = build.read_text(encoding="utf-8")
+
+          # kotlin-reflect debe estar también en el classpath de KSP
+          # si el procesador que se ejecuta necesita KClasses.
+          if "ksp(libs.kotlin.reflect)" not in text:
+              line = re.search(r"(?m)^([ \t]*)ksp\(libs\.bundles\.ksp\)\s*$", text)
+              if line:
+                  insertion = line.group(0) + "\n" + line.group(1) + "ksp(libs.kotlin.reflect)"
+                  text = text[:line.start()] + insertion + text[line.end():]
+                  build.write_text(text, encoding="utf-8")
+              else:
+                  raise SystemExit(
+                      "No se encontró ksp(libs.bundles.ksp) en app/build.gradle.kts; "
+                      "no se modificó automáticamente el classpath."
+                  )
+
+          print("Ajustes aplicados.")
+          PY
+
+          echo "===== Versiones efectivas ====="
+          grep -nE '^(kotlin|ksp|dagger-hilt)[[:space:]]*=' "$TOML"
+
+          echo "===== Configuración KSP ====="
+          grep -nE 'ksp\(libs\.(bundles\.ksp|kotlin\.reflect)\)' "$BUILD"
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Configurar Android SDK y NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=/usr/local/lib/android/sdk/ndk/27.3.13750724" >> "$GITHUB_ENV"
+
+          echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "/usr/local/lib/android/sdk/platform-tools" >> "$GITHUB_PATH"
+
+          yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
+          /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "ndk;27.3.13750724" \
+            "cmake;3.22.1"
+
+      - name: Configurar local.properties
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
+
+      - name: Diagnosticar entorno y dependencias
+        shell: bash
+        run: |
+          set -u
+
+          echo "===== Java ====="
+          java -version
+
+          echo "===== Gradle ====="
+          ./gradlew --version
+
+          echo "===== Versiones Kotlin, KSP y Hilt ====="
+          grep -nE '^(kotlin|ksp|dagger-hilt)[[:space:]]*=' gradle/libs.versions.toml || true
+
+          echo "===== Dependencias de KSP ====="
+          ./gradlew :app:dependencies \
+            --configuration kspModernRelease \
+            --no-daemon \
+            --no-configuration-cache || true
+
+      - name: Compilar APK Release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ./gradlew clean assembleRelease \
+            --no-daemon \
+            --no-build-cache \
+            --no-configuration-cache \
+            --stacktrace \
+            --info
+
+      - name: Buscar APK generado
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          find . -type f -path '*/build/outputs/apk/*/*.apk' -print
+
+          if ! find . -type f -path '*/build/outputs/apk/release/*.apk' -print -quit | grep -q .; then
+            echo "::error::La compilación terminó, pero no se encontró ningún APK Release."
+            exit 1
+          fi
+
+      - name: Subir APK como artefacto
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wow-forever-android-sd695
+          path: '**/build/outputs/apk/release/*.apk'
+          if-no-files-found: error
+          retention-days: 7
